@@ -15,8 +15,22 @@ Pasang Git, Docker Engine, dan Docker Compose plugin. Buka port TCP `80` dan `44
 Clone repository lalu masuk ke folder project:
 
 ```bash
-git clone URL_REPOSITORY_GITHUB kopsusren-v2
+git clone git@github.com:shidqifa1/kopsusren-v2.git
 cd kopsusren-v2
+./setup-server.sh
+```
+
+Setup interaktif tersebut akan meminta domain/IP, koneksi Supabase, login web,
+nomor WhatsApp, Groq API key, dan URL QRIS. Secret internal dan hash password
+dibuat otomatis. Setelah validasi, setup dapat langsung membangun dan menyalakan
+seluruh stack Docker.
+
+Jalankan script di **host server Docker**, bukan dari dalam container `web` atau
+`gateway`, karena script ini mengelola seluruh stack dan volume.
+
+Jika tidak ingin memakai setup interaktif, konfigurasi manual tetap dapat dibuat:
+
+```bash
 cp .env.server.example .env.server
 chmod 600 .env.server
 ```
@@ -37,7 +51,7 @@ APP_ADDRESS=:80
 QRIS_IMAGE_URL=http://IP_SERVER/assets/qris-kopsusren.jpeg
 ```
 
-`DATABASE_URL`, `AUTH_SECRET`, `VALID_PASSWORD_HASH`, `WA_SHARED_SECRET`, dan `GROQ_API_KEY` harus diambil dari konfigurasi aman yang sekarang. Jangan menyalinnya ke source code.
+`DATABASE_URL`, `AUTH_SECRET`, `VALID_PASSWORD_HASH`, `WA_SHARED_SECRET`, dan `GROQ_API_KEY` harus disimpan hanya di `.env.server`. Jangan menyalinnya ke source code.
 
 ## 2. Build dan start
 

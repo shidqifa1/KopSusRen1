@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "setup:server": "bash ./setup-server.sh",
     "generate:secrets": "node scripts/generate-secrets.mjs",
     "vercel:env": "node --env-file=.env.local scripts/sync-vercel-env.mjs",
     "smoke:deployment": "node --env-file=.env.local scripts/smoke-deployment.mjs",
