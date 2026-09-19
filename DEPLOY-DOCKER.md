@@ -25,6 +25,10 @@ nomor WhatsApp, Groq API key, dan URL QRIS. Secret internal dan hash password
 dibuat otomatis. Setelah validasi, setup dapat langsung membangun dan menyalakan
 seluruh stack Docker.
 
+Pada bagian login, isi username admin baru lalu masukkan password baru dua kali.
+Password mentah tidak ditulis ke `.env.server`; hanya hash `VALID_PASSWORD_HASH`
+yang disimpan. Jadi login produksi tidak harus memakai password deployment lama.
+
 Jalankan script di **host server Docker**, bukan dari dalam container `web` atau
 `gateway`, karena script ini mengelola seluruh stack dan volume.
 

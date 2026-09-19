@@ -42,6 +42,9 @@ test('interactive server setup creates private env and controls the complete sta
   assert.match(setupScript,/chmod 600 "\$ENV_FILE"/);
   assert.match(setupScript,/docker compose --env-file "\$ENV_FILE" config/);
   assert.match(setupScript,/docker compose --env-file "\$ENV_FILE" up -d --build/);
+  assert.match(setupScript,/Buat username admin web baru/);
+  assert.match(setupScript,/Password mentah tidak disimpan/);
+  assert.match(setupScript,/VALID_USERNAME=%s/);
   assert.match(setupScript,/VALID_PASSWORD_HASH=%s/);
   assert.match(setupScript,/WA_SHARED_SECRET=%s/);
   assert.doesNotMatch(setupScript,/gsk_[A-Za-z0-9_-]{20,}/);

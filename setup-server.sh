@@ -145,12 +145,12 @@ database_url="$(prompt_secret 'DATABASE_URL Supabase')"
 assert_single_line DATABASE_URL "$database_url"
 [[ "$database_url" =~ ^postgres(ql)?:// ]] || fail "DATABASE_URL harus berupa URL PostgreSQL Supabase."
 
-valid_username="$(prompt 'Username login web' 'shidqifa')"
+valid_username="$(prompt 'Buat username admin web baru' 'shidqifa')"
 [[ "$valid_username" =~ ^[A-Za-z0-9_.-]+$ ]] || fail "Username hanya boleh berisi huruf, angka, titik, underscore, dan tanda minus."
 
-admin_password="$(prompt_secret 'Buat password login web (minimal 10 karakter)')"
+admin_password="$(prompt_secret 'Buat password admin web baru (minimal 10 karakter)')"
 (( ${#admin_password} >= 10 )) || fail "Password login minimal 10 karakter. Jalankan ulang setup."
-admin_password_confirm="$(prompt_secret 'Ulangi password login web')"
+admin_password_confirm="$(prompt_secret 'Ulangi password admin web baru')"
 [[ "$admin_password" == "$admin_password_confirm" ]] || fail "Konfirmasi password tidak cocok. Jalankan ulang setup."
 
 owner_numbers="$(normalize_phone "$(prompt 'Nomor WhatsApp owner (format 62, pisahkan koma jika lebih dari satu)' '6285175403169')")"
@@ -201,6 +201,8 @@ trap - EXIT
 unset database_url groq_api_key auth_secret wa_shared_secret password_hash
 
 info ".env.server berhasil dibuat dengan permission 600."
+info "Login admin web disiapkan untuk username: $valid_username"
+printf 'Password mentah tidak disimpan; server hanya menyimpan hash password.\n'
 info "Memvalidasi Docker Compose..."
 docker compose --env-file "$ENV_FILE" config >/dev/null
 info "Konfigurasi Docker Compose valid."
