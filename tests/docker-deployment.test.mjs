@@ -19,7 +19,9 @@ test('Docker image has separate web and gateway production targets',()=>{
 
 test('compose connects gateway to the same web API and persists WhatsApp session',()=>{
   assert.match(compose,/WA_BACKEND_URL: http:\/\/web:3000\/api\/v2\/commands/);
+  assert.match(compose,/WA_SESSION_DIR: \/app\/data\/baileys_auth/);
   assert.match(compose,/whatsapp_session:\/app\/data/);
+  assert.match(compose,/- "80:80"/);
   assert.match(compose,/condition: service_healthy/);
   assert.match(compose,/Caddyfile:\/etc\/caddy\/Caddyfile:ro/);
 });
@@ -29,6 +31,8 @@ test('local secrets and WhatsApp credentials cannot enter Git or Docker context'
     assert.match(source,/\.env\.\*/);
     assert.match(source,/baileys_auth/);
   }
+  assert.match(dockerignore,/\*\*\/node_modules/);
+  assert.match(dockerignore,/\*\*\/auth_info/);
   assert.match(gitignore,/!\.env\.server\.example/);
   assert.match(dockerignore,/!\.env\.server\.example/);
   assert.doesNotMatch(serverEnv,/gsk_[A-Za-z0-9_-]{20,}/);

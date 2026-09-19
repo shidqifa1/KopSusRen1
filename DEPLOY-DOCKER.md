@@ -8,6 +8,20 @@ Stack ini menjalankan aplikasi dalam tiga container:
 
 Database tidak diduplikasi. Web dan gateway tetap memakai database Supabase Kopi Manager yang sama melalui `DATABASE_URL`.
 
+Build memakai satu context repository (`context: .`), jadi `.dockerignore` di root
+berlaku untuk seluruh subfolder. Pola `**/node_modules` mencegah dependency lokal
+dari folder mana pun ikut terkirim ke Docker daemon; tidak perlu menaruh salinan
+`.dockerignore` di setiap subfolder.
+
+Sesi Baileys berada di `/app/data/baileys_auth`, sementara `/app/data` di-mount
+ke named volume `whatsapp_session`. Mengganti image atau container tidak menghapus
+sesi WhatsApp, sehingga QR/pairing tidak perlu diulang. Jangan menjalankan
+`docker compose down -v` kecuali memang ingin menghapus sesi tersebut.
+
+Port publik `80` dimiliki container `proxy` dan diteruskan ke web internal pada
+port `3000`. Dengan `APP_ADDRESS=:80`, web dapat dibuka langsung melalui
+`http://IP_SERVER` tanpa menambahkan nomor port.
+
 ## 1. Persiapan server
 
 Pasang Git, Docker Engine, dan Docker Compose plugin. Buka port TCP `80` dan `443`, serta UDP `443` jika HTTP/3 ingin digunakan.

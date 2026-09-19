@@ -31,11 +31,13 @@ services:
     env_file: .env.server
     environment:
       WA_BACKEND_URL: http://web:3000/api/v2/commands
+      # Folder auth Baileys berada di dalam named volume whatsapp_session.
       WA_SESSION_DIR: /app/data/baileys_auth
     depends_on:
       web:
         condition: service_healthy
     volumes:
+      # Jangan dihapus: sesi WA tetap ada saat image/container diganti.
       - whatsapp_session:/app/data
     read_only: true
     tmpfs:
@@ -53,6 +55,7 @@ services:
       web:
         condition: service_healthy
     ports:
+      # Web dapat dibuka langsung melalui http://IP_SERVER.
       - "80:80"
       - "443:443"
       - "443:443/udp"
