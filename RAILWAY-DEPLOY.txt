@@ -1,0 +1,37 @@
+KOPSUSREN WHATSAPP GATEWAY — DEPLOY 24 JAM TANPA GITHUB
+
+Folder project:
+/home/shidqifa/Documents/Codex/2026-09-04/referenced-chatgpt-conversation-this-is-an/work/kopsusren-v2
+
+1. Buka terminal di laptop/PC yang menyimpan folder project, lalu jalankan:
+
+cd "/home/shidqifa/Documents/Codex/2026-09-04/referenced-chatgpt-conversation-this-is-an/work/kopsusren-v2"
+npm install -g @railway/cli
+railway login
+railway init
+railway add --service kopsusren-wa
+railway volume add --mount-path /data --service kopsusren-wa
+railway open
+
+2. Di Railway, buka service kopsusren-wa > Variables. Tambahkan lewat UI (jangan dikirim lewat chat dan jangan dimasukkan ke repository):
+
+WA_BACKEND_URL=https://kopsusren-v2.vercel.app/api/v2/commands
+WA_SHARED_SECRET=<nilai yang sama dengan Vercel>
+WA_PAIRING_NUMBER=<nomor WhatsApp gateway, format 62...>
+LOG_LEVEL=info
+WA_SESSION_DIR=/data/baileys_auth
+
+Pastikan service hanya memakai 1 replica dan volume /data terpasang.
+
+3. Kembali ke terminal:
+
+railway up --service kopsusren-wa
+railway logs --service kopsusren-wa
+
+4. Deploy pertama akan menampilkan pairing code di log. Di HP buka WhatsApp > Perangkat tertaut > Tautkan perangkat > Tautkan dengan nomor telepon, lalu masukkan code itu.
+
+5. Tanda berhasil:
+
+KopSusRen WhatsApp gateway connected.
+
+Setelah berhasil, restart/deploy selanjutnya memakai sesi di volume /data dan tidak perlu pairing ulang. Jangan menjalankan gateway laptop bersamaan dengan Railway karena satu akun WhatsApp hanya boleh dikendalikan satu instance gateway KopSusRen.

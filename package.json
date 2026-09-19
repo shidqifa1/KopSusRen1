@@ -1,0 +1,28 @@
+{
+  "name": "kopi-manager",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "generate:secrets": "node scripts/generate-secrets.mjs",
+    "vercel:env": "node --env-file=.env.local scripts/sync-vercel-env.mjs",
+    "smoke:deployment": "node --env-file=.env.local scripts/smoke-deployment.mjs",
+    "gateway:wa": "node --env-file=.env.local services/gateway/whatsapp.js",
+    "build:docker": "tsc -p tsconfig.docker.json",
+    "start:server": "node server/http.mjs",
+    "docker:config": "docker compose --env-file .env.server config",
+    "check": "node --check services/chatbot/orchestrator.js && node --check services/chatbot/conversation.js && node --check services/parser/groqOrderParser.js && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@vercel/speed-insights": "^2.0.0",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "drizzle-orm": "beta",
+    "pino": "^9.9.5",
+    "postgres": "^3.4.9",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "devDependencies": {
+    "@vercel/node": "^5.8.9",
+    "drizzle-kit": "beta",
+    "vercel": "^59.11.2"
+  }
+}

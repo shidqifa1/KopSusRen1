@@ -1,0 +1,69 @@
+services:
+  web:
+    build:
+      context: .
+      target: web
+    image: kopsusren-web:latest
+    restart: unless-stopped
+    env_file: .env.server
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  gateway:
+    build:
+      context: .
+      target: gateway
+    image: kopsusren-gateway:latest
+    restart: unless-stopped
+    env_file: .env.server
+    environment:
+      WA_BACKEND_URL: http://web:3000/api/v2/commands
+      WA_SESSION_DIR: /app/data/baileys_auth
+    depends_on:
+      web:
+        condition: service_healthy
+    volumes:
+      - whatsapp_session:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  proxy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    env_file: .env.server
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  whatsapp_session:
+  caddy_data:
+  caddy_config:

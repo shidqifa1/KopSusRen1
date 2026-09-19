@@ -1,0 +1,29 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+const api=fs.readFileSync(new URL('../api/v2/commands.ts',import.meta.url),'utf8');
+const services=fs.readFileSync(new URL('../src/services/kopsusren.js',import.meta.url),'utf8');
+const migration=fs.readFileSync(new URL('../supabase/migrations/011_history_import.sql',import.meta.url),'utf8');
+
+test('sales, cash, and JSON import controls are visible in their operational pages',()=>{
+  assert.match(html,/id="importPenjualanFile"/);
+  assert.match(html,/id="importKasFile"/);
+  assert.match(html,/id="importJsonFile"/);
+  assert.match(html,/Import Setting JSON/);
+});
+
+test('V2 import flows use authenticated backend commands instead of local cache',()=>{
+  assert.match(services,/importSales: payload => command\('import_sales'/);
+  assert.match(services,/importCash: payload => command\('import_cash'/);
+  assert.match(services,/importSettings: payload => command\('import_settings'/);
+  assert.match(api,/"import_sales", "import_cash", "import_settings"/);
+});
+
+test('historical import is idempotent and does not consume current inventory',()=>{
+  assert.match(migration,/idempotency_key=p_idempotency_key/);
+  assert.match(migration,/source,status[\s\S]*'IMPORT','FULFILLED'/);
+  assert.doesNotMatch(migration,/insert into public\.inventory_movements/i);
+  assert.doesNotMatch(migration,/insert into public\.inventory_reservations/i);
+});
