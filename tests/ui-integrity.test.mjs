@@ -22,7 +22,8 @@ test('static DOM ids are unique and every direct id lookup exists',()=>{
 
 test('cash operations are consolidated without a duplicate Kas Usaha page',()=>{
   assert.doesNotMatch(html,/id="page-kas"|goPage\('kas'\)|>Kas Usaha</);
-  assert.match(html,/id="page-pengeluaran"[\s\S]*id="saldoKasDisplay"[\s\S]*id="importKasFile"[\s\S]*id="kasMutasiList"/);
+  assert.match(html,/id="page-pengeluaran"[\s\S]*id="saldoKasDisplay"[\s\S]*id="kasMutasiList"/);
+  assert.match(html,/id="page-pengaturan"[\s\S]*id="settingsImportCashButton"[\s\S]*id="importKasFile"/);
 });
 
 test('mutations always reload a complete authoritative snapshot',()=>{

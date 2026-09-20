@@ -15,6 +15,9 @@ test('sales, cash, and JSON import controls are visible in their operational pag
 });
 
 test('settings page exposes sales, cash, and JSON import from one place',()=>{
+  assert.equal((html.match(/id="importPenjualanFile"/g)||[]).length,1);
+  assert.equal((html.match(/id="importKasFile"/g)||[]).length,1);
+  assert.equal((html.match(/id="importJsonFile"/g)||[]).length,1);
   assert.match(html,/id="page-pengaturan"[\s\S]*id="settingsImportSalesButton"[\s\S]*id="settingsImportCashButton"[\s\S]*id="settingsImportLog"[\s\S]*id="importJsonFile"/);
   assert.match(html,/settingsImportSalesButton[^>]*onclick="document\.getElementById\('importPenjualanFile'\)\.click\(\)"/);
   assert.match(html,/settingsImportCashButton[^>]*onclick="document\.getElementById\('importKasFile'\)\.click\(\)"/);

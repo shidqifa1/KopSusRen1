@@ -216,13 +216,10 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <div class="section-title"><span class="emoji">📋</span> Riwayat Penjualan</div>
   <div class="card">
     <div class="card-title">Import & Export Penjualan</div>
-    <p class="form-help">CSV hasil export boleh diedit lalu diimpor kembali. Import menambahkan riwayat historis tanpa mengurangi stok hari ini.</p>
+    <p class="form-help">CSV hasil export boleh diedit lalu diimpor kembali dari halaman Pengaturan &amp; Backup. Import menambahkan riwayat historis tanpa mengurangi stok hari ini.</p>
     <div class="btn-group">
       <button class="btn btn-primary" onclick="exportPenjualanCSV()">⬇️ Export CSV</button>
-      <button class="btn btn-secondary" onclick="document.getElementById('importPenjualanFile').click()">⬆️ Import CSV</button>
     </div>
-    <input id="importPenjualanFile" type="file" accept=".csv,text/csv" hidden onchange="importPenjualanCSV(event)">
-    <div id="importPenjualanLog" class="import-log"></div>
   </div>
   <div class="card">
     <label>Filter Tanggal</label>
@@ -285,13 +282,10 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
   <details class="card">
     <summary><span><small>DATA KAS</small><strong>Import, export & riwayat kas</strong></span></summary>
-    <p class="form-help">CSV kas yang sudah diedit akan ditambahkan sebagai mutasi historis. File identik aman dari import ganda.</p>
+    <p class="form-help">CSV kas yang sudah diedit dapat diimpor dari halaman Pengaturan &amp; Backup. File identik aman dari import ganda.</p>
     <div class="btn-group">
       <button class="btn btn-primary" onclick="exportKasCSV()">⬇️ Export CSV</button>
-      <button class="btn btn-secondary" onclick="document.getElementById('importKasFile').click()">⬆️ Import CSV</button>
     </div>
-    <input id="importKasFile" type="file" accept=".csv,text/csv" hidden onchange="importKasCSV(event)">
-    <div id="importKasLog" class="import-log"></div>
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
       <span>Riwayat mutasi terbaru</span>
       <span id="mutasiCount" style="font-size:12px;color:var(--abu2)"></span>
@@ -413,6 +407,10 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
         <button id="settingsImportSalesButton" class="btn btn-outline" onclick="document.getElementById('importPenjualanFile').click()">⬆️ Import Data Penjualan</button>
         <button id="settingsImportCashButton" class="btn btn-outline" onclick="document.getElementById('importKasFile').click()">⬆️ Import Laporan Kas</button>
       </div>
+      <input id="importPenjualanFile" type="file" accept=".csv,text/csv" hidden onchange="importPenjualanCSV(event)">
+      <input id="importKasFile" type="file" accept=".csv,text/csv" hidden onchange="importKasCSV(event)">
+      <div id="importPenjualanLog" class="import-log is-hidden"></div>
+      <div id="importKasLog" class="import-log is-hidden"></div>
       <div id="settingsImportLog" class="import-log"></div>
       <div style="margin-top:10px;padding:10px;background:var(--krem2);border-radius:8px;font-size:12px;color:var(--abu2);line-height:1.6">
         📌 File hasil export boleh diedit, lalu tekan tombol import yang sesuai. Import penjualan bersifat historis dan tidak mengurangi stok hari ini; import kas akan memperbarui saldo.
