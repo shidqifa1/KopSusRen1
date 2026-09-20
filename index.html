@@ -205,8 +205,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   </div>
 
   <div class="btn-group">
-    <button class="btn btn-secondary" onclick="goPage('po')">+ Order / Penjualan</button>
-    <button class="btn btn-outline" onclick="buatLaporanHarian()">📄 Buat Laporan Hari Ini</button>
+    <button class="btn btn-secondary btn-full" onclick="goPage('po')">+ Order / Penjualan</button>
   </div>
   <div class="page-bottom"></div>
 </div>
@@ -214,13 +213,6 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <!-- ============== RIWAYAT ============== -->
 <div class="page" id="page-riwayat">
   <div class="section-title"><span class="emoji">📋</span> Riwayat Penjualan</div>
-  <div class="card">
-    <div class="card-title">Import & Export Penjualan</div>
-    <p class="form-help">CSV hasil export boleh diedit lalu diimpor kembali dari halaman Pengaturan &amp; Backup. Import menambahkan riwayat historis tanpa mengurangi stok hari ini.</p>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="exportPenjualanCSV()">⬇️ Export CSV</button>
-    </div>
-  </div>
   <div class="card">
     <label>Filter Tanggal</label>
     <input type="date" id="filterTanggal" onchange="renderRiwayat()">
@@ -281,12 +273,8 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   </div>
 
   <details class="card">
-    <summary><span><small>DATA KAS</small><strong>Import, export & riwayat kas</strong></span></summary>
-    <p class="form-help">CSV kas yang sudah diedit dapat diimpor dari halaman Pengaturan &amp; Backup. File identik aman dari import ganda.</p>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="exportKasCSV()">⬇️ Export CSV</button>
-    </div>
-    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:16px;">
+    <summary><span><small>DATA KAS</small><strong>Riwayat mutasi kas</strong></span></summary>
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
       <span>Riwayat mutasi terbaru</span>
       <span id="mutasiCount" style="font-size:12px;color:var(--abu2)"></span>
     </div>
@@ -358,14 +346,6 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <!-- ============== LAPORAN ============== -->
 <div class="page" id="page-laporan">
   <div class="section-title"><span class="emoji">📄</span> Laporan Harian</div>
-
-  <div class="card">
-    <div class="card-title">📊 Export ke Google Sheets</div>
-      <div class="btn-group">
-        <button class="btn btn-primary" onclick="exportPenjualanCSV()">📋 Export Data Penjualan</button>
-        <button class="btn btn-secondary" onclick="exportKasCSV()">💰 Export Laporan Kas</button>
-      </div>
-    </div>
 
     <div class="card">
       <div class="card-title">Generate Laporan</div>
@@ -2351,10 +2331,6 @@ function renderLaporan() {
       </div>
       <button class="btn btn-outline btn-sm" onclick="downloadLaporan('${l.id}')">⬇️</button>
     </div>`).join('');
-}
-
-function buatLaporanHarian() {
-  generateLaporan(today());
 }
 
 function generateLaporan(tgl) {

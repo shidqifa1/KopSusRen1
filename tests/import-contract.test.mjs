@@ -7,11 +7,20 @@ const api=fs.readFileSync(new URL('../api/v2/commands.ts',import.meta.url),'utf8
 const services=fs.readFileSync(new URL('../src/services/kopsusren.js',import.meta.url),'utf8');
 const migration=fs.readFileSync(new URL('../supabase/migrations/011_history_import.sql',import.meta.url),'utf8');
 
-test('sales, cash, and JSON import controls are visible in their operational pages',()=>{
+test('sales, cash, and JSON import controls are available',()=>{
   assert.match(html,/id="importPenjualanFile"/);
   assert.match(html,/id="importKasFile"/);
   assert.match(html,/id="importJsonFile"/);
   assert.match(html,/Import Setting JSON/);
+});
+
+test('CSV import and export actions only appear in settings',()=>{
+  assert.equal((html.match(/onclick="exportPenjualanCSV\(\)"/g)||[]).length,1);
+  assert.equal((html.match(/onclick="exportKasCSV\(\)"/g)||[]).length,1);
+  assert.match(html,/id="page-pengaturan"[\s\S]*onclick="exportPenjualanCSV\(\)"[\s\S]*onclick="exportKasCSV\(\)"[\s\S]*id="settingsImportSalesButton"[\s\S]*id="settingsImportCashButton"/);
+  assert.doesNotMatch(html,/id="page-riwayat"[\s\S]*onclick="exportPenjualanCSV\(\)"[\s\S]*id="page-kalkulator"/);
+  assert.doesNotMatch(html,/id="page-pengeluaran"[\s\S]*onclick="exportKasCSV\(\)"[\s\S]*id="page-laporan"/);
+  assert.doesNotMatch(html,/id="page-laporan"[\s\S]*onclick="export(?:Penjualan|Kas)CSV\(\)"[\s\S]*id="page-pengaturan"/);
 });
 
 test('settings page exposes sales, cash, and JSON import from one place',()=>{
