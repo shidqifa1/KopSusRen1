@@ -1,12 +1,12 @@
-# Deploy KopSusRen V2 ke server Docker
+# Deploy Baristack App ke server Docker
 
 Stack ini menjalankan aplikasi dalam tiga container:
 
-- `web`: frontend dan API Kopi Manager;
+- `web`: frontend dan API Baristack App;
 - `gateway`: koneksi WhatsApp Baileys;
 - `proxy`: Caddy untuk HTTP/HTTPS.
 
-Database tidak diduplikasi. Web dan gateway tetap memakai database Supabase Kopi Manager yang sama melalui `DATABASE_URL`.
+Database tidak diduplikasi. Web dan gateway memakai satu source of truth yang sama melalui `DATABASE_URL`.
 
 Build memakai satu context repository (`context: .`), jadi `.dockerignore` di root
 berlaku untuk seluruh subfolder. Pola `**/node_modules` mencegah dependency lokal
@@ -59,14 +59,14 @@ Untuk domain dengan HTTPS otomatis:
 
 ```text
 APP_ADDRESS=kopi.domainkamu.com
-QRIS_IMAGE_URL=https://kopi.domainkamu.com/assets/qris-kopsusren.jpeg
+QRIS_IMAGE_URL=https://baristack.my.id/assets/qris-baristack.jpeg
 ```
 
 Untuk tes memakai IP tanpa domain:
 
 ```text
 APP_ADDRESS=:80
-QRIS_IMAGE_URL=http://IP_SERVER/assets/qris-kopsusren.jpeg
+QRIS_IMAGE_URL=http://IP_SERVER/assets/qris-baristack.jpeg
 ```
 
 `DATABASE_URL`, `AUTH_SECRET`, `VALID_PASSWORD_HASH`, `WA_SHARED_SECRET`, dan `GROQ_API_KEY` harus disimpan hanya di `.env.server`. Jangan menyalinnya ke source code.
@@ -131,7 +131,7 @@ File backup sesi WhatsApp bersifat rahasia. Jangan upload ke GitHub atau cloud p
 ## 5. Cutover
 
 1. Pastikan web container sehat dan login berfungsi.
-2. Pastikan `gateway` menampilkan `KopSusRen WhatsApp gateway connected.`.
+2. Pastikan `gateway` menampilkan `Baristack WhatsApp gateway connected.`.
 3. Kirim satu pesan tes WhatsApp dan pastikan order muncul pada web server.
 4. Pastikan hanya gateway server yang hidup.
 5. Setelah stabil, arahkan domain ke IP server. Deployment Vercel boleh dipertahankan sementara sebagai fallback, tetapi jangan menyalakan gateway kedua.

@@ -23,7 +23,7 @@
 <link rel="stylesheet" href="styles.css">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Kopi Manager</title>
+<title>Baristack App</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="/src/services/kopsusren.js?v=20260907-remove-icons"></script>
 <script>
@@ -46,7 +46,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <div id="loginScreen">
   <div class="login-logo">
     <span class="cup">☕</span>
-    <h2 class="serif">Kopi Manager</h2>
+    <h2 class="serif">Baristack App</h2>
     <p>Sistem Manajemen Usaha Minuman</p>
   </div>
   <div class="login-card">
@@ -83,7 +83,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <div class="top-bar">
   <button class="hamburger" onclick="toggleNav()" aria-label="Buka menu">☰</button>
   <div class="top-bar-text">
-    <h1>☕ Kopi Manager</h1>
+    <h1>☕ Baristack App</h1>
     <div class="subtitle" id="topDate"></div>
     <div class="subtitle" id="syncStatus" style="font-size:10px;opacity:.5;margin-top:1px"></div>
   </div>
@@ -93,7 +93,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <div class="nav-overlay" id="navOverlay" onclick="toggleNav()"></div>
 <div class="nav-drawer" id="navDrawer">
   <div class="nav-header">
-    <h2>☕ Kopi Manager</h2>
+    <h2>☕ Baristack App</h2>
     <p>Sistem Manajemen Usaha Minuman</p>
   </div>
   <div class="nav-item active" onclick="goPage('dashboard')"><span class="nav-icon">🏠</span>Dashboard</div>
@@ -405,7 +405,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div class="card">
       <div class="card-title">📊 Import & Export CSV</div>
       <p style="font-size:13px;color:var(--abu);margin-bottom:10px;line-height:1.6">
-        Export data untuk diedit di Google Sheets/Excel, lalu import kembali file CSV-nya ke Kopi Manager.
+        Export data untuk diedit di Google Sheets/Excel, lalu import kembali file CSV-nya ke Baristack App.
       </p>
       <div class="btn-group">
         <button class="btn btn-primary" onclick="exportPenjualanCSV()">📋 Export Data Penjualan</button>
@@ -435,7 +435,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <div class="card">
     <div class="card-title">ℹ️ Tentang Aplikasi</div>
     <p style="font-size:13px;color:var(--abu);line-height:1.7;">
-      <strong>KopSusRen Manager V2</strong><br>
+      <strong>Baristack App</strong><br>
       Manajemen usaha minuman: kopi, matcha, latte, americano.<br>
       Data utama tersimpan di Supabase dan transaksi diproses secara atomik.<br><br>
       Fitur aktif: penjualan, PO, pembayaran tunai/QRIS manual, stok, resep, belanja, kas, laporan, dan export.
@@ -2486,7 +2486,7 @@ ${state.bahan.map(b=>`<tr>
 </tbody></table>
 
 <footer>
-<p>Laporan dibuat otomatis oleh Kopi Manager · ${new Date().toLocaleString('id-ID')}</p>
+<p>Laporan dibuat otomatis oleh Baristack App · ${new Date().toLocaleString('id-ID')}</p>
 <p>Disimpan di: ${folderName}/${fileName}</p>
 </footer>
 </body></html>`;
@@ -2559,7 +2559,7 @@ function exportData() {
   const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download=`kopi-manager-backup-${today()}.json`; a.click();
+  a.href=url; a.download=`baristack-app-backup-${today()}.json`; a.click();
   URL.revokeObjectURL(url);
   showToast('Data berhasil di-export!');
 }
@@ -2573,7 +2573,7 @@ async function restoreV2Settings(data) {
     recipe:(Array.isArray(item.resep)?item.resep:[]).map(recipe=>({ingredientId:recipe.bahanId??recipe.ingredient_id??recipe.ingredientId,quantity:Number(recipe.jumlah??recipe.quantity)})),
   }));
   const cashBalance=Number(data?.saldoKas);
-  if (!ingredients.length&&!products.length&&!Number.isFinite(cashBalance)) throw new Error('JSON bukan backup Kopi Manager yang dikenali');
+  if (!ingredients.length&&!products.length&&!Number.isFinite(cashBalance)) throw new Error('JSON bukan backup Baristack App yang dikenali');
   if (!confirm('Pulihkan stok, threshold, harga, resep, dan saldo kas dari JSON ini? Riwayat transaksi tidak akan dihapus atau ditimpa.')) return false;
   const ok=await runV2Mutation('Memulihkan setting...',()=>window.kopsusrenServices.importSettings({ingredients,products,cashBalance:Number.isFinite(cashBalance)?cashBalance:null}),'Setting dari JSON berhasil dipulihkan');
   if (ok) setImportLog('importJsonLog',`✅ ${ingredients.length} bahan dan ${products.length} menu dipulihkan.`);
@@ -2629,7 +2629,7 @@ async function exportKasCSV() {
       Math.round(m.saldo)
     ]);
   });
-  downloadCSV(rows, `Kopi-Kas-${today()}.csv`);
+  downloadCSV(rows, `Baristack-Kas-${today()}.csv`);
   showToast('Export Kas CSV berhasil! Import ke Google Sheets.');
 }
 
@@ -2669,7 +2669,7 @@ async function exportPenjualanCSV() {
       p.bayar
     ]);
   });
-  downloadCSV(rows, `Kopi-Penjualan-${today()}.csv`);
+  downloadCSV(rows, `Baristack-Penjualan-${today()}.csv`);
   showToast('Export Penjualan CSV berhasil! Import ke Google Sheets.');
 }
 
@@ -2795,7 +2795,7 @@ async function doLogin() {
 }
 
 function doLogout() {
-  if (!confirm('Keluar dari Kopi Manager?')) return;
+  if (!confirm('Keluar dari Baristack App?')) return;
   sessionStorage.removeItem('kopi_session');
   location.reload();
 }

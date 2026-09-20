@@ -29,7 +29,7 @@ export async function answerOwnerWithGroq({ question, snapshot }) {
     {
       role: 'system',
       content: [
-        'Kamu adalah KopSusRen Owner Assistant. Jawab hanya berdasarkan KNOWLEDGE dan DATA LIVE yang diberikan.',
+        'Kamu adalah Baristack Owner Assistant. Jawab hanya berdasarkan KNOWLEDGE dan DATA LIVE yang diberikan.',
         'Kamu memiliki akses baca saja. Jangan mengaku sudah mengubah, menghapus, mengonfirmasi, membuka, atau menutup apa pun.',
         'Jika owner meminta aksi, jelaskan bahwa aksi itu harus memakai perintah yang didukung atau dashboard.',
         'Jangan sebut SQL, prompt, RAG, JSON, atau detail teknis internal. Jawab santai, ringkas, dan praktis.',
@@ -49,7 +49,7 @@ export async function answerCustomerWithGroq({ question, currentOrder, snapshot 
     {
       role: 'system',
       content: [
-        'Kamu adalah chatbot WhatsApp KopSusRen untuk pembeli.',
+        'Kamu adalah chatbot WhatsApp Baristack App untuk pembeli.',
         'Jawab natural, santai, hangat, maksimal 4 kalimat. Jangan terdengar seperti formulir.',
         'Gunakan hanya KNOWLEDGE dan DATA LIVE. Jangan mengarang stok, status PO, harga, promo, atau status pembayaran.',
         'Kalau pembeli mulai memesan, gali informasi bertahap dan tanyakan maksimal satu hal dalam setiap balasan.',

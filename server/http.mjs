@@ -134,7 +134,7 @@ const server = createServer(async (req, rawRes) => {
   }
 });
 
-server.listen(port, host, () => console.log(`Kopi Manager web listening on ${host}:${port}`));
+server.listen(port, host, () => console.log(`Baristack App web listening on ${host}:${port}`));
 
 function shutdown(signal) {
   console.log(`${signal} received, shutting down`);

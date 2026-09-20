@@ -249,7 +249,7 @@ async function start() {
     version,
     auth: state,
     logger: pino({ level: 'silent' }),
-    browser: ['KopSusRen Gateway', 'Chrome', '1.0'],
+    browser: ['Baristack Gateway', 'Chrome', '1.0'],
     printQRInTerminal: !pairingNumber,
   });
   currentSocket = sock;
@@ -275,7 +275,7 @@ async function start() {
       if (currentSocket !== sock) return;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = null;
-      log.info('KopSusRen WhatsApp gateway connected.');
+      log.info('Baristack WhatsApp gateway connected.');
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       await heartbeat(sock).catch(error => log.warn({ err: String(error) }, 'heartbeat awal gagal'));
       heartbeatTimer = setInterval(() => heartbeat(sock).catch(error => log.warn({ err: String(error) }, 'heartbeat gagal')), 30000);

@@ -102,7 +102,7 @@ make_password_hash() {
   '
 }
 
-printf '\nKopSusRen V2 — Setup Server Docker\n'
+printf '\nBaristack App — Setup Server Docker\n'
 printf '==================================\n\n'
 
 require_command docker
@@ -163,7 +163,7 @@ groq_api_key="$(prompt_secret 'Groq API key')"
 assert_single_line GROQ_API_KEY "$groq_api_key"
 groq_model="$(prompt 'Model Groq' 'openai/gpt-oss-120b')"
 
-default_qris_url="${public_base_url}/assets/qris-kopsusren.jpeg"
+default_qris_url="${public_base_url}/assets/qris-baristack.jpeg"
 qris_image_url="$(prompt 'URL gambar QRIS' "$default_qris_url")"
 assert_single_line QRIS_IMAGE_URL "$qris_image_url"
 [[ "$qris_image_url" =~ ^https?://[^[:space:]]+$ ]] || fail "URL QRIS harus diawali http:// atau https://."

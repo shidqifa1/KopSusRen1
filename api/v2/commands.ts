@@ -410,7 +410,7 @@ async function handleChatInbound(payload: any) {
   if (!parsed.readyToCommit) {
     const replyText = explicitlyStartsNewOrder
       ? [
-          "Siap, santai aja 😄 Ini menu KopSusRen hari ini:",
+          "Siap, santai aja 😄 Ini menu Baristack hari ini:",
           "",
           menuListText(),
           "",

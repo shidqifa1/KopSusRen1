@@ -1,0 +1,11 @@
+{
+  "name": "Baristack App",
+  "short_name": "Baristack",
+  "description": "Manajemen usaha minuman, pre-order, stok, pembayaran, dan WhatsApp AI.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f1e7",
+  "theme_color": "#2D5A27",
+  "lang": "id-ID"
+}

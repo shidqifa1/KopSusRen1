@@ -1,4 +1,4 @@
-# Runbook operasional KopSusRen
+# Runbook operasional Baristack App
 
 Target penggunaan: Minggu, 20 September 2026.
 
@@ -18,7 +18,7 @@ npm run gateway:wa
 Biarkan terminal terakhir tetap terbuka. Log yang sehat menampilkan:
 
 ```text
-KopSusRen WhatsApp gateway connected.
+Baristack WhatsApp gateway connected.
 ```
 
 Di web buka **Status WhatsApp**. Status harus **Terhubung** dan waktu heartbeat tidak lebih dari 90 detik.

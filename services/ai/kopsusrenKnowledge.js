@@ -1,5 +1,5 @@
 export const KOPSUSREN_KNOWLEDGE = `
-KopSusRen adalah usaha minuman berbasis pre-order (PO) harian.
+Baristack adalah usaha minuman berbasis pre-order (PO) harian yang dikelola melalui Baristack App.
 
 Menu aktif:
 - Kopi Susu Gula Aren: Rp8.000. Mengandung kopi, susu, dan gula aren; creamy, manis, dan tidak terlalu pahit.

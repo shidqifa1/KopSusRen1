@@ -1,6 +1,6 @@
-# KopSusRen V2
+# Baristack App
 
-Kopi Manager dan chatbot WhatsApp memakai database Supabase dan business RPC yang sama. WhatsApp hanya menjadi antarmuka tambahan; tidak ada stok, order, payment, atau PO versi chatbot.
+Baristack App dan chatbot WhatsApp memakai database bisnis dan business service yang sama. WhatsApp hanya menjadi antarmuka tambahan; tidak ada stok, order, payment, atau PO versi chatbot.
 
 Development deployment: https://kopsusren-v2.vercel.app
 

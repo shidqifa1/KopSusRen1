@@ -280,11 +280,11 @@ async function handleCustomer(db,payload,messageId,history=[]) {
     if (previous.items?.length) return {replyText:draftStatusReply(previous,products)};
     return {replyText:await customerStatus(db,phone)};
   }
-  if (parsed?.intents?.includes('IDENTITY')) return {replyText:'Aku asisten AI KopSusRen yang jalan pakai Groq. Aku khusus bantu soal menu, PO, pesanan, dan pembayaran ya.'};
-  if (parsed?.intents?.includes('SHOW_MENU')&&!po) return {replyText:`Menu KopSusRen:\n${menuText(products,availability)}\n\nPO belum dibuka ya.`};
+  if (parsed?.intents?.includes('IDENTITY')) return {replyText:'Aku asisten AI Baristack App yang jalan pakai Groq. Aku khusus bantu soal menu, PO, pesanan, dan pembayaran ya.'};
+  if (parsed?.intents?.includes('SHOW_MENU')&&!po) return {replyText:`Menu Baristack:\n${menuText(products,availability)}\n\nPO belum dibuka ya.`};
 
   if (!po) {
-    if (parsed?.intents?.includes('SHOW_MENU')) return {replyText:`Menu KopSusRen:\n${menuText(products,availability)}\n\nPO belum dibuka ya.`};
+    if (parsed?.intents?.includes('SHOW_MENU')) return {replyText:`Menu Baristack:\n${menuText(products,availability)}\n\nPO belum dibuka ya.`};
     if (parsed?.intents?.includes('ASK_RECOMMENDATION')) return {replyText:`${groundedRecommendation(text,products,availability)}\n\nPO belum dibuka ya, jadi belum bisa menerima pesanan.`};
     return {replyText:'PO belum dibuka atau sudah ditutup ya. Nanti kalau sudah buka, aku bisa bantu pesan.'};
   }
@@ -336,12 +336,12 @@ async function handleCustomer(db,payload,messageId,history=[]) {
     if (previous.pending_question==='menu'||/\b(?:pesan|pesen|mesen|beli|menu)\b/i.test(text)) {
       return {replyText:`“${requestedMenuLabel(text)}” belum tersedia di menu sekarang. Pilih salah satu yang ada ya:\n${menuText(products,availability)}`};
     }
-    return {replyText:'Aku khusus bantu soal menu, PO, pesanan, dan pembayaran KopSusRen ya.'};
+    return {replyText:'Aku khusus bantu soal menu, PO, pesanan, dan pembayaran Baristack ya.'};
   }
   if (parsed?.intents?.includes('CHECK_PO_STATUS')) {
     return {replyText:`${po.name} sedang dibuka${po.cutoff_at?` sampai ${new Date(po.cutoff_at).toLocaleTimeString('id-ID',{timeZone:'Asia/Jakarta',hour:'2-digit',minute:'2-digit'})}`:''}.`};
   }
-  if (parsed?.intents?.includes('SHOW_MENU')) return {replyText:`Menu KopSusRen:\n${menuText(products,availability)}`};
+  if (parsed?.intents?.includes('SHOW_MENU')) return {replyText:`Menu Baristack:\n${menuText(products,availability)}`};
   if (parsed?.intents?.includes('ASK_RECOMMENDATION')&&!parsed.entities.item_operations.length) {
     return {replyText:groundedRecommendation(text,products,availability)};
   }
@@ -585,8 +585,8 @@ async function handleOwner(db,payload,history=[]) {
       ...(summary.ingredientTotals||[]).map(item=>`• ${item.name}: ${Number(item.quantity)} ${item.unit}`),
       `Omzet: Rp${Number(summary.revenue||0).toLocaleString('id-ID')} · ${summary.unpaid} belum lunas`].join('\n')};
   }
-  if (intents.includes('IDENTITY')) return {replyText:'Gue asisten AI KopSusRen yang jalan pakai Groq. Gue bisa bantu ngobrol soal PO, stok, pesanan, produksi, dan pembayaran, tapi keputusan bisnis tetap dicek sistem Kopi Manager.'};
-  if (intents.includes('OUT_OF_SCOPE')) return {replyText:'Gue khusus bantu operasional KopSusRen: stok, PO, pesanan, produksi, dan pembayaran.'};
+  if (intents.includes('IDENTITY')) return {replyText:'Gue asisten AI Baristack App yang jalan pakai Groq. Gue bisa bantu ngobrol soal PO, stok, pesanan, produksi, dan pembayaran, tapi keputusan bisnis tetap dicek sistem Baristack App.'};
+  if (intents.includes('OUT_OF_SCOPE')) return {replyText:'Gue khusus bantu operasional Baristack: stok, PO, pesanan, produksi, dan pembayaran.'};
   return {replyText:parsed?.reply_hint||'Mau cek stok, PO, kebutuhan produksi, atau pembayaran yang belum lunas?'};
 }
 

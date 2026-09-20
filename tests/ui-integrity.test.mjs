@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const html=fs.readFileSync(new URL('../index.html',import.meta.url),'utf8');
+const manifest=fs.readFileSync(new URL('../manifest.json',import.meta.url),'utf8');
 
 test('all inline UI handlers resolve to declared functions',()=>{
   const handlers=[...html.matchAll(/on(?:click|change|input|submit)="([A-Za-z_$][\w$]*)\s*\(/g)].map(match=>match[1]);
@@ -31,4 +32,14 @@ test('mutations always reload a complete authoritative snapshot',()=>{
 
 test('retired external report uploader is absent',()=>{
   assert.doesNotMatch(html,/script\.google\.com|uploadLaporanKeDrive/);
+});
+
+test('customer-facing web and PWA branding use Baristack App',()=>{
+  assert.match(html,/<title>Baristack App<\/title>/);
+  assert.match(html,/<h2 class="serif">Baristack App<\/h2>/);
+  assert.match(html,/<h1>☕ Baristack App<\/h1>/);
+  assert.doesNotMatch(html,/>Kopi Manager</);
+  const parsed=JSON.parse(manifest);
+  assert.equal(parsed.name,'Baristack App');
+  assert.equal(parsed.short_name,'Baristack');
 });

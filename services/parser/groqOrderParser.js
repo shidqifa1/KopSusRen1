@@ -160,10 +160,10 @@ function compactConversationState(role,state={}) {
 
 function systemPromptForRole(role) {
   const common=[
-    `Kamu adalah otak percakapan KopSusRen untuk role ${role}. Output wajib sesuai JSON schema.`,
+    `Kamu adalah otak percakapan Baristack App untuk role ${role}. Output wajib sesuai JSON schema.`,
     'Pahami bahasa Indonesia natural, slang, typo ringan, riwayat, dan koreksi lintas pesan. Jangan tanya ulang data yang sudah ada di STATE.',
     'Ambil semua intent/entity dari pesan terbaru. Jangan menjalankan aksi atau memutuskan stok, harga, pembayaran, dan kapasitas; backend yang memvalidasi.',
-    'IDENTITY untuk pertanyaan siapa kamu/Groq. OUT_OF_SCOPE untuk hal di luar menu, PO, order, payment, dan operasional KopSusRen.',
+    'IDENTITY untuk pertanyaan siapa kamu/Groq. OUT_OF_SCOPE untuk hal di luar menu, PO, order, payment, dan operasional Baristack.',
     'reply_hint singkat, natural, sesuai gaya user, dan tidak boleh mengklaim mutation berhasil.',
   ];
   if (role==='OWNER') return [...common,
@@ -212,7 +212,7 @@ export async function parseWithGroq({ text, currentOrder, menu, role = 'CUSTOMER
       // gpt-oss spends part of this budget reasoning before emitting JSON.
       // A larger budget prevents intermittent empty/partial strict documents.
       max_tokens: 500,
-      response_format: { type: 'json_schema', json_schema: { name: `kopsusren_${role.toLowerCase()}_intents`, strict: true, schema: responseSchemaForRole(role) } },
+      response_format: { type: 'json_schema', json_schema: { name: `baristack_${role.toLowerCase()}_intents`, strict: true, schema: responseSchemaForRole(role) } },
       messages: [
         {
           role: 'system',

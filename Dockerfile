@@ -21,7 +21,7 @@ FROM runtime-deps AS web
 
 COPY --from=build /app/dist ./dist
 COPY server ./server
-COPY index.html styles.css ./
+COPY index.html styles.css manifest.json ./
 COPY src ./src
 COPY assets ./assets
 

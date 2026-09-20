@@ -3,7 +3,7 @@ services:
     build:
       context: .
       target: web
-    image: kopsusren-web:latest
+    image: baristack-web:latest
     restart: unless-stopped
     env_file: .env.server
     expose:
@@ -26,7 +26,7 @@ services:
     build:
       context: .
       target: gateway
-    image: kopsusren-gateway:latest
+    image: baristack-gateway:latest
     restart: unless-stopped
     env_file: .env.server
     environment:

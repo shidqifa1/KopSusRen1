@@ -34,7 +34,7 @@ function hiddenPrompt(label) {
   });
 }
 
-const password = await hiddenPrompt('Buat password login KopSusRen V2: ');
+const password = await hiddenPrompt('Buat password login Baristack App: ');
 if (password.length < 10) throw new Error('Password minimal 10 karakter');
 
 const envPath = new URL('../.env.local', import.meta.url);
