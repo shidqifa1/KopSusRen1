@@ -14,6 +14,12 @@ test('sales, cash, and JSON import controls are visible in their operational pag
   assert.match(html,/Import Setting JSON/);
 });
 
+test('settings page exposes sales, cash, and JSON import from one place',()=>{
+  assert.match(html,/id="page-pengaturan"[\s\S]*id="settingsImportSalesButton"[\s\S]*id="settingsImportCashButton"[\s\S]*id="settingsImportLog"[\s\S]*id="importJsonFile"/);
+  assert.match(html,/settingsImportSalesButton[^>]*onclick="document\.getElementById\('importPenjualanFile'\)\.click\(\)"/);
+  assert.match(html,/settingsImportCashButton[^>]*onclick="document\.getElementById\('importKasFile'\)\.click\(\)"/);
+});
+
 test('V2 import flows use authenticated backend commands instead of local cache',()=>{
   assert.match(services,/importSales: payload => command\('import_sales'/);
   assert.match(services,/importCash: payload => command\('import_cash'/);

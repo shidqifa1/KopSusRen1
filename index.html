@@ -403,16 +403,19 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     </div>
 
     <div class="card">
-      <div class="card-title">📊 Export ke Google Sheets</div>
+      <div class="card-title">📊 Import & Export CSV</div>
       <p style="font-size:13px;color:var(--abu);margin-bottom:10px;line-height:1.6">
-        Download file CSV lalu import ke Google Sheets atau Excel. Format sudah disesuaikan.
+        Export data untuk diedit di Google Sheets/Excel, lalu import kembali file CSV-nya ke Kopi Manager.
       </p>
       <div class="btn-group">
         <button class="btn btn-primary" onclick="exportPenjualanCSV()">📋 Export Data Penjualan</button>
         <button class="btn btn-secondary" onclick="exportKasCSV()">💰 Export Laporan Kas</button>
+        <button id="settingsImportSalesButton" class="btn btn-outline" onclick="document.getElementById('importPenjualanFile').click()">⬆️ Import Data Penjualan</button>
+        <button id="settingsImportCashButton" class="btn btn-outline" onclick="document.getElementById('importKasFile').click()">⬆️ Import Laporan Kas</button>
       </div>
+      <div id="settingsImportLog" class="import-log"></div>
       <div style="margin-top:10px;padding:10px;background:var(--krem2);border-radius:8px;font-size:12px;color:var(--abu2);line-height:1.6">
-        📌 Cara import: Buka Google Sheets → File → Import → Upload file CSV yang sudah didownload
+        📌 File hasil export boleh diedit, lalu tekan tombol import yang sesuai. Import penjualan bersifat historis dan tidak mengurangi stok hari ini; import kas akan memperbarui saldo.
       </div>
     </div>
 
@@ -558,7 +561,12 @@ function importColumn(headers,needle) {
 
 function setImportLog(id,message,error=false) {
   const element=document.getElementById(id);
-  if (element) element.innerHTML=`<span style="color:var(--${error?'merah':'hijau'})">${safeText(message)}</span>`;
+  const html=`<span style="color:var(--${error?'merah':'hijau'})">${safeText(message)}</span>`;
+  if (element) element.innerHTML=html;
+  if (id==='importPenjualanLog'||id==='importKasLog') {
+    const settingsLog=document.getElementById('settingsImportLog');
+    if (settingsLog) settingsLog.innerHTML=html;
+  }
 }
 
 async function importPenjualanV2(file) {
