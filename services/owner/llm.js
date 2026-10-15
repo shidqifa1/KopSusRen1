@@ -24,6 +24,8 @@ export const OWNER_WRITE_COMMANDS=Object.freeze([
   '/bayar konfirmasi <order-number>',
   '/bayar tolak <order-number>',
   '/order batal <order-number>',
+  '/chat ambil <nomor-whatsapp>',
+  '/chat lanjut <nomor-whatsapp>',
 ]);
 
 const routeSchema={

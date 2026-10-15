@@ -35,8 +35,6 @@ Riwayat menggunakan `orders.customer_phone` persis dari nomor pengirim dan `sour
 - Draft dari versi lama yang belum memiliki snapshot konfirmasi diminta konfirmasi ulang satu kali.
 - Reservasi dan transaksi tetap melewati `create_order_bundle` yang sudah ada. Pencegahan duplicate webhook dan pemeriksaan kapasitas akhir tetap memakai mekanisme repo.
 
-## Menjalankan
-
 ## Diskusi owner berdasarkan data terbaru
 
 Command manual (`/help`, `/stok list`, `/produksi aktif`, dan lainnya) tetap tanpa panggilan AI. Diskusi bebas sekarang menerima snapshot baca dari database: stok fisik/reservasi/tersedia, menu/harga/resep, PO aktif/terjadwal beserta ringkasannya, nilai order dan ranking menu 7×24 jam terakhir, serta saldo akun. Query tetap ditulis backend; AI tidak mendapat akses SQL atau kredensial. Snapshot dibaca ulang untuk setiap konsultasi dan waktu datanya ditampilkan dalam WIB.
@@ -52,6 +50,15 @@ Coba dari nomor owner:
 Enam pesan konsultasi terakhir disimpan sebagai konteks lanjutan; snapshot database tidak disimpan sebagai memori. Hitungan kebutuhan bahan dibuat kode dari resep standar dan stok tersedia. Target angka eksplisit `15 cup`/`40 gelas` didukung sampai 1000; tiap menu adalah alternatif skenario, **bukan kapasitas gabungan**. Untuk campuran menu atau variasi khusus, gunakan rekap PO aktual atau minta perincian; simulasi ini tidak menjanjikan kapasitas jual di luar limit PO.
 
 Biaya bahan memakai average cost yang tercatat; biaya belum diketahui ditandai `null`, bukan dianggap gratis. Nilai order tidak sama dengan saldo kas: order belum lunas ikut nilai order, sedangkan saldo dibaca dari ledger akun. Jawaban AI tetap perlu pengujian provider nyata untuk menilai kepatuhan terhadap fakta dan gaya bahasa.
+
+## Ambil alih percakapan
+
+- Dari nomor owner, kirim `/chat ambil 628...`, lalu `Y`. Customer harus sudah pernah menghubungi bot. Bot berhenti membalas teks maupun gambar customer itu dan tidak memanggil AI.
+- Tangani customer manual. Kirim `/chat lanjut 628...`, lalu `Y` untuk mengaktifkan lagi. Draft dipertahankan, tetapi persetujuan ringkasan lama dibatalkan.
+- Setelah dua kegagalan pemahaman berulang, bot mengirim pemberitahuan owner dan menjeda percakapan otomatis bila `WA_OWNER_NUMBERS` terisi. Notifikasi berisi nomor customer, alasan, draft, dan cara mengaktifkan bot lagi.
+- Tanpa nomor owner terkonfigurasi, bot tidak mengunci customer dalam jeda yang tidak bisa dipulihkan.
+- Gambar pembayaran selama jeda tetap perlu ditangani owner; bot tidak mencatat buktinya otomatis selama percakapan dijeda.
+- Command ini hanya mengontrol percakapan; membalas manual tidak membuat order atau pembayaran otomatis. Catat transaksi yang ditangani manual lewat web.
 
 ## Menjalankan
 

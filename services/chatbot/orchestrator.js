@@ -191,6 +191,7 @@ function manualHandoffResult({phone,draft,products,issues,notifyOwner=true}) {
         `Alasan: ${(issues||[]).join('; ')||'Interpretasi belum dapat dipastikan'}`,
         'Draft saat ini:',
         summary,
+        `Bot dijeda bila nomor owner sudah dikonfigurasi. Setelah ditangani, aktifkan lagi dengan /chat lanjut ${phone}, lalu konfirmasi Y.`,
       ].join('\n'),
     })):[],
   };
@@ -281,6 +282,9 @@ async function prepareChatTurn(payload,registration) {
   if (isOwnerPhone(phone)) {
     return {...snapshot,...await prepareOwnerTurn({payload,snapshot,db:sql}),previousDraft:snapshot.orderState,role:'OWNER'};
   }
+  if (snapshot.orderState?._manual_handoff) {
+    return {...snapshot,parsed:null,parsedByAi:false,parserLatencyMs:0,previousDraft:snapshot.orderState,role:'CUSTOMER',manualHandoff:true};
+  }
   const context=await loadBusinessContext(sql);
   if (payload.hasImage) return {...snapshot,parsed:null,parsedByAi:false,parserLatencyMs:0,products:context.products,previousDraft:snapshot.orderState,role:'CUSTOMER'};
 
@@ -301,6 +305,7 @@ async function prepareChatTurn(payload,registration) {
 }
 
 async function handleCustomer(db,payload,messageId,prepared) {
+  if (prepared?.manualHandoff) return {replyText:null,manualHandoff:true};
   const phone=normalizePhone(payload.phone);
   if (payload.hasImage) return customerImage(db,{phone,messageId:payload.waMessageId||messageId});
   const {po,products,availability}=await loadBusinessContext(db);
@@ -378,7 +383,7 @@ async function handleCustomer(db,payload,messageId,prepared) {
     let failedDraft={...safety.draft,awaiting_confirmation:false,_parser_failure:true};
     const isHandoff=safety.classification===SAFETY_CLASSIFICATION.OWNER_HANDOFF;
     const notifyOwner=isHandoff&&!failedDraft._handoff_notified;
-    if (isHandoff) failedDraft={...failedDraft,_handoff_notified:true};
+    if (isHandoff) failedDraft={...failedDraft,_handoff_notified:true,_manual_handoff:ownerPhones().length>0};
     failedDraft=await persistConversation(db,{phone,draft:failedDraft,messageId,confidence:0,status:'collecting_information'});
     if (isHandoff) return {
       draftId:failedDraft._draft_id,
@@ -412,7 +417,7 @@ async function handleCustomer(db,payload,messageId,prepared) {
     ?(skipsConfirmation?previous._confirmation_snapshot||null:orderConfirmationSnapshot(safety.draft,products)):null};
   const isHandoff=safety.classification===SAFETY_CLASSIFICATION.OWNER_HANDOFF;
   const notifyOwner=isHandoff&&!draft._handoff_notified;
-  if (isHandoff) draft={...draft,_handoff_notified:true};
+  if (isHandoff) draft={...draft,_handoff_notified:true,_manual_handoff:ownerPhones().length>0};
   draft=await persistConversation(db,{phone,draft,messageId,confidence,status:isHandoff?'collecting_information':null});
   if (isHandoff) return {
     draftId:draft._draft_id,

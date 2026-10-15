@@ -54,6 +54,11 @@ export function parseOwnerCommand(input) {
   if (head==='/order'&&verb==='batal'&&tokens.length===3&&Number.isInteger(Number(tokens[2]))&&Number(tokens[2])>0) {
     return {ok:true,kind:'WRITE',action:'ORDER_CANCEL',args:{orderNumber:Number(tokens[2])},command:`/order batal ${Number(tokens[2])}`};
   }
+  if (head==='/chat'&&['ambil','lanjut'].includes(verb)&&tokens.length===3) {
+    const phone=tokens[2].replace(/^\+/,'').replace(/^0/,'62');
+    if (!/^62[1-9]\d{7,12}$/.test(phone)) return {ok:false,error:'Pakai nomor WhatsApp lengkap, misalnya /chat ambil 628123456789.'};
+    return {ok:true,kind:'WRITE',action:'CHAT_HANDOFF',args:{phone,paused:verb==='ambil'},command:`/chat ${verb} ${phone}`};
+  }
   return {ok:false,error:'Command tidak dikenal atau argumennya belum lengkap. Pakai /help.'};
 }
 
@@ -209,6 +214,20 @@ export async function executeOwnerReadCommand(db,parsed) {
 
 export async function executeOwnerWriteCommand(db,parsed) {
   if (!parsed?.ok||parsed.kind!=='WRITE') throw new Error('Write command tidak valid.');
+  if (parsed.action==='CHAT_HANDOFF') {
+    const {phone,paused}=parsed.args;
+    const owners=String(process.env.WA_OWNER_NUMBERS||'').split(',').map(value=>value.replace(/\D/g,'').replace(/^0/,'62'));
+    if (owners.includes(phone)) throw new Error('Command ini hanya untuk percakapan customer, bukan nomor owner.');
+    await db`select pg_advisory_xact_lock(hashtextextended(${phone},0))`;
+    const rows=await db`update conversation_order_states set
+      order_state=(order_state-'_confirmation_snapshot'-'_usual_order_suggestion')||jsonb_build_object(
+        '_manual_handoff',${paused}::boolean,'awaiting_confirmation',false),
+      status='collecting_information',updated_at=now()
+      where channel='whatsapp' and customer_phone=${phone} returning customer_phone`;
+    if (!rows.length) throw new Error('Percakapan customer belum ditemukan.');
+    return {replyText:paused?`Chat ${phone} diambil alih manual. Bot berhenti membalas sampai /chat lanjut ${phone}.`
+      :`Bot untuk ${phone} aktif lagi. Draft tetap tersimpan; detail order perlu dikonfirmasi ulang.`};
+  }
   if (parsed.action==='STOCK_ADJUST') {
     const ingredient=await resolveIngredient(db,parsed.args.item);
     const quantity=convertQuantity(parsed.args.quantity,parsed.args.unit,String(ingredient.unit).toUpperCase());
