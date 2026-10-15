@@ -5,6 +5,7 @@ import { groqEnabled, parseWithGroq } from '../parser/groqOrderParser.js';
 import {
   SAFETY_CLASSIFICATION, applyParserAmbiguities, applyStructuredPatch, authorizeOrderCommit, classifyDraftSafety, deterministicCustomerTurn, draftItemsForRpc, emptyDraft,
   groundedRecommendation, isExplicitOrderConfirmation, menuText, mentionsSupportedPaymentMethod, missingFields, nextReply, sanitizeCustomerParsedResult, summarizeDraft,
+  orderConfirmationSnapshot, parseUsualOrderRequest, usualOrderReply,
 } from './conversation.js';
 import { extractOwnerPoFields, jakartaTime, validateOwnerPoSchedule } from './ownerPo.js';
 import { decideParsedResultApplicability,runInboundPipeline } from './transactionFlow.js';
@@ -287,6 +288,9 @@ async function prepareChatTurn(payload,registration) {
   const previous=saved.po_session_id&&saved.po_session_id!==context.po?.id
     ? emptyDraft(context.po?.id||null)
     : {...emptyDraft(context.po?.id||null),...saved,po_session_id:context.po?.id||null,items:Array.isArray(saved.items)?saved.items:[]};
+  if (parseUsualOrderRequest(text)||usualOrderReply({text,draft:previous,products:context.products,availability:context.availability})) {
+    return {...snapshot,parsed:null,parsedByAi:false,parserLatencyMs:0,products:context.products,previousDraft:previous,role:'CUSTOMER',usualOrder:true};
+  }
   const parserStarted=performance.now();
   let parsed=deterministicCustomerTurn(text,previous,context.products);
   if (!parsed&&groqEnabled()) {
@@ -333,7 +337,7 @@ async function handleCustomer(db,payload,messageId,prepared) {
 
   if (parsed?.intents?.includes('REQUEST_QRIS_CODE')) return resendPendingQris(db,phone);
   if (parsed?.intents?.includes('RESET_ORDER_DRAFT')&&previous.items?.length) {
-    const replaced={...previous,items:[],last_product_id:null,pending_question:'menu',awaiting_confirmation:false};
+    const replaced={...previous,items:[],last_product_id:null,pending_question:'menu',awaiting_confirmation:false,_usual_order_suggestion:null,_confirmation_snapshot:null};
     const saved=await persistConversation(db,{phone,draft:replaced,messageId,confidence:parsed.confidence||0.8});
     return {draftId:saved._draft_id,draft:saved,replyText:`Boleh, pesanan lamanya sudah dikosongkan. Mau ganti dengan apa?\n${menuText(products,availability)}`};
   }
@@ -349,6 +353,24 @@ async function handleCustomer(db,payload,messageId,prepared) {
     if (parsed?.intents?.includes('SHOW_MENU')) return {replyText:`Menu Baristack:\n${menuText(products,availability)}\n\nPO belum dibuka ya.`};
     if (parsed?.intents?.includes('ASK_RECOMMENDATION')) return {replyText:`${groundedRecommendation(text,products,availability)}\n\nPO belum dibuka ya, jadi belum bisa menerima pesanan.`};
     return {replyText:'PO belum dibuka atau sudah ditutup ya. Nanti kalau sudah buka, aku bisa bantu pesan.'};
+  }
+
+  const usualRequest=parseUsualOrderRequest(text);
+  // Never infer identity from a shared customer name/class or the master phone.
+  const history=usualRequest?.supported&&!previous.items.length?await db`
+    select o.order_number,
+      coalesce(json_agg(json_build_object('product_id',oi.product_id,'quantity',oi.qty,
+        'no_ice',oi.no_ice,'notes',oi.notes) order by oi.created_at,oi.id)
+        filter(where oi.id is not null),'[]') as items
+    from orders o left join order_items oi on oi.order_id=o.id
+    where o.customer_phone=${phone} and o.source='WHATSAPP' and o.status='FULFILLED'
+    group by o.id order by o.created_at desc,o.id desc limit 1`:[];
+  const usual=usualOrderReply({text,draft:previous,history,products,availability});
+  if (usual) {
+    const candidate={...usual.draft,_confirmation_snapshot:usual.draft.awaiting_confirmation
+      ?orderConfirmationSnapshot(usual.draft,products):null};
+    const saved=await persistConversation(db,{phone,draft:candidate,messageId,confidence:1});
+    return {draftId:saved._draft_id,draft:saved,replyText:usual.replyText||draftReply(saved,products)};
   }
 
   if (!parsed) {
@@ -385,7 +407,9 @@ async function handleCustomer(db,payload,messageId,prepared) {
   }
 
   const safety=classifyDraftSafety(draft,patchResult);
-  draft=safety.draft;
+  const skipsConfirmation=(parsed?.intents||[]).some(intent=>['CHECK_PO_STATUS','SHOW_MENU','ASK_RECOMMENDATION','OUT_OF_SCOPE','UNKNOWN'].includes(intent));
+  draft={...safety.draft,_confirmation_snapshot:safety.draft.awaiting_confirmation
+    ?(skipsConfirmation?previous._confirmation_snapshot||null:orderConfirmationSnapshot(safety.draft,products)):null};
   const isHandoff=safety.classification===SAFETY_CLASSIFICATION.OWNER_HANDOFF;
   const notifyOwner=isHandoff&&!draft._handoff_notified;
   if (isHandoff) draft={...draft,_handoff_notified:true};
@@ -434,7 +458,9 @@ async function handleCustomer(db,payload,messageId,prepared) {
     return {replyText:groundedRecommendation(text,products,availability)};
   }
   if (readyToCommit) {
-    if (!authorizeOrderCommit({text,previousDraft:previous,safety})) return {replyText:draftReply(draft,products,patchResult)};
+    if (!authorizeOrderCommit({text,previousDraft:previous,safety,menu:products})) {
+      return {replyText:`Detail atau harga pesanan perlu dikonfirmasi ulang ya.\n\n${draftReply(draft,products,patchResult)}`};
+    }
     const rpcItems=draftItemsForRpc(draft);
     const created=await db`select create_order_bundle(${draft.customer_name},${draft.class_name},${po.id},${sql.json(rpcItems)},
       ${draft.payment_method},${null},'WHATSAPP',${`wa-order:${payload.waMessageId||messageId}`},${phone}) as id`;
