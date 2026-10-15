@@ -11,12 +11,16 @@
     "build:docker": "tsc -p tsconfig.docker.json",
     "start:server": "node server/http.mjs",
     "docker:config": "docker compose --env-file .env.server config",
+    "eval:chatbot": "node evals/run-evals.mjs --provider=deterministic",
+    "eval:chatbot:groq": "node --env-file=.env.local evals/run-evals.mjs --provider=groq",
+    "eval:shadow-export": "node evals/export-shadow.mjs",
     "check": "node --check services/chatbot/orchestrator.js && node --check services/chatbot/conversation.js && node --check services/parser/groqOrderParser.js && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "drizzle-orm": "beta",
+    "groq-sdk": "^1.6.0",
     "pino": "^9.9.5",
     "postgres": "^3.4.9",
     "qrcode-terminal": "^0.12.0"

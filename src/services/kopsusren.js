@@ -41,6 +41,7 @@
     completeOrder: orderId => command('complete_order', { orderId }),
     voidOrder: (orderId, reason) => command('void_order', { orderId, reason }),
     createPo: payload => command('create_po', payload),
+    openPoNow: (poSessionId, cutoffAt, maxTotalCups, ingredientLimits) => command('open_po_now', { poSessionId, cutoffAt, maxTotalCups, ingredientLimits }),
     setPoStatus: (poSessionId, status) => command('set_po_status', { poSessionId, status }),
     adjustInventory: payload => command('adjust_inventory', payload),
     adjustAccount: payload => command('adjust_account', payload),

@@ -58,7 +58,7 @@ try {
     createOrder(productId, 1, duplicateKey, '6280000010003'),
   ]);
   if (!duplicates.every(result => result.status === 'fulfilled')) {
-    throw new Error(`Retry idempotent bersamaan gagal: ${duplicates.map(result => result.status).join(', ')}`);
+    throw new Error(`Retry idempotent bersamaan gagal: ${duplicates.map(result => result.status==='rejected'?`${result.reason.code}: ${result.reason.message}`:result.status).join(', ')}`);
   }
   const duplicateIds = duplicates.map(result => result.value);
   if (new Set(duplicateIds).size !== 1) throw new Error('Idempotency key yang sama menghasilkan order berbeda');

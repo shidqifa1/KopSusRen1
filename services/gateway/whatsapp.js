@@ -129,7 +129,17 @@ async function sendBackendMessages(sock, senderJid, out) {
   for (const notice of out.customerNotifications || []) {
     const jid = jidForPhone(notice.phone);
     if (jid && notice.text) {
-      await sock.sendMessage(jid, { text: String(notice.text).trim() });
+      if (notice.qrisImageUrl) {
+        try {
+          const image = await downloadImageBuffer(notice.qrisImageUrl);
+          await sock.sendMessage(jid, { image, mimetype: 'image/jpeg', caption: String(notice.text).trim() });
+        } catch (error) {
+          log.error({ err: String(error) }, 'upload QRIS recovery gagal, kirim tautan sebagai fallback');
+          await sock.sendMessage(jid, { text: `${String(notice.text).trim()}\n\nBuka QRIS: ${notice.qrisImageUrl}` });
+        }
+      } else {
+        await sock.sendMessage(jid, { text: String(notice.text).trim() });
+      }
       log.info({ to: safePhone(notice.phone) }, 'notifikasi customer terkirim');
     }
   }

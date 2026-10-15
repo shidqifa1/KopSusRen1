@@ -9,3 +9,5 @@ baileys_auth/
 node_modules/
 dist/
 .DS_Store
+evals/latest-report.json
+evals/shadow-labeling.json

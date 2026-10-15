@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, realpath } from 'node:fs/promises';
 import { extname, resolve, sep } from 'node:path';
 import authHandler from '../dist/api/auth.js';
 import stateHandler from '../dist/api/state.js';
@@ -93,14 +93,18 @@ function queryObject(url) {
 async function serveStatic(pathname, res) {
   const requested = pathname === '/' ? '/index.html' : pathname;
   const relative = decodeURIComponent(requested).replace(/^\/+/, '');
-  let filePath = resolve(root, relative);
+  const publicFiles = new Set(['index.html', 'styles.css', 'manifest.json', 'src/services/kopsusren.js']);
+  const publicAsset = /^assets\/[a-zA-Z0-9_-]+\.(?:png|jpeg|jpg|svg|webp)$/.test(relative);
+  if (!publicFiles.has(relative) && !publicAsset) return false;
+  const filePath = resolve(root, relative);
   if (filePath !== root && !filePath.startsWith(`${root}${sep}`)) return false;
 
   try {
+    if (await realpath(filePath) !== filePath) return false;
     const info = await stat(filePath);
     if (!info.isFile()) return false;
   } catch {
-    filePath = resolve(root, 'index.html');
+    return false;
   }
 
   const extension = extname(filePath).toLowerCase();

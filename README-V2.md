@@ -69,7 +69,10 @@ WA_SHARED_SECRET
 WA_OWNER_NUMBERS=6285175403169
 QRIS_IMAGE_URL
 CHATBOT_V2_ENABLED=true
+CHATBOT_MODE=confirmation
 ```
+
+Gunakan `CHATBOT_MODE=shadow` untuk merekam interpretasi parser tanpa mengirim balasan AI atau mengubah draft, order, stok, reservation, maupun pembayaran customer. Owner commands tetap berjalan normal. Mode default `confirmation` mempertahankan flow chatbot operasional.
 
 ## Menjalankan dan memeriksa
 

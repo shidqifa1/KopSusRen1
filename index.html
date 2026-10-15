@@ -12,20 +12,18 @@
 <meta name="msapplication-navbutton-color" content="#2D5A27">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
-<!-- Biar gak bisa zoom in/out (opsional, biar lebih kayak app) -->
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
 <!-- Ikon buat home screen (kalau ada file gambar) -->
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 
 <!-- Warna background saat loading -->
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20261004-po-popup">
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Baristack App</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="/src/services/kopsusren.js?v=20260907-remove-icons"></script>
+<script src="/src/services/kopsusren.js?v=20261004-open-po-popup"></script>
 <script>
   window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
 </script>
@@ -40,74 +38,70 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
-<body>
+<body class="auth-locked">
 
 <!-- ============== LOGIN SCREEN ============== -->
-<div id="loginScreen">
+<div id="loginScreen" aria-labelledby="loginTitle">
   <div class="login-logo">
-    <span class="cup">☕</span>
-    <h2 class="serif">Baristack App</h2>
+    <h2 class="serif" id="loginTitle">Baristack App</h2>
     <p>Sistem Manajemen Usaha Minuman</p>
   </div>
-  <div class="login-card">
+  <form class="login-card" onsubmit="event.preventDefault(); doLogin()">
     <label for="loginUsername">Username</label>
     <input type="text" id="loginUsername" placeholder="Masukkan username"
            autocomplete="username" autocapitalize="none" spellcheck="false">
 
     <label for="loginPassword" style="margin-top:12px">Password</label>
     <input type="password" id="loginPassword" placeholder="Masukkan password"
-           autocomplete="current-password"
-           onkeydown="if(event.key==='Enter') doLogin()">
+           autocomplete="current-password">
 
     <div id="loginError" class="login-error"></div>
 
     <div class="btn-group" style="margin-top:16px">
-      <button id="loginBtn" class="btn btn-primary btn-full" onclick="doLogin()">
-        ☕ Masuk
-      </button>
+      <button type="submit" id="loginBtn" class="btn btn-primary btn-full">Masuk</button>
     </div>
-  </div>
+  </form>
   <p class="login-hint">Sesi otomatis berakhir saat browser ditutup</p>
 </div>
 
 <!-- LOADING OVERLAY -->
-<div class="loading-overlay" id="loadingOverlay">
+<div class="loading-overlay" id="loadingOverlay" role="status" aria-live="polite" aria-hidden="true">
   <div class="spinner"></div>
   <div class="loading-text" id="loadingText">Memuat data...</div>
 </div>
 
 <!-- TOAST CONTAINER -->
-<div id="toastContainer"></div>
+<div id="toastContainer" aria-live="polite" aria-atomic="true"></div>
 
 <!-- TOP BAR -->
 <div class="top-bar">
-  <button class="hamburger" onclick="toggleNav()" aria-label="Buka menu">☰</button>
+  <button type="button" class="hamburger" id="menuButton" onclick="toggleNav()" aria-label="Buka menu" aria-controls="navDrawer" aria-expanded="false"><span aria-hidden="true">☰</span><span class="menu-label">Menu</span></button>
   <div class="top-bar-text">
-    <h1>☕ Baristack App</h1>
+    <h1>Baristack App</h1>
     <div class="subtitle" id="topDate"></div>
-    <div class="subtitle" id="syncStatus" style="font-size:10px;opacity:.5;margin-top:1px"></div>
+    <div class="subtitle sync-status" id="syncStatus"></div>
   </div>
 </div>
 
 <!-- NAV OVERLAY + DRAWER -->
-<div class="nav-overlay" id="navOverlay" onclick="toggleNav()"></div>
-<div class="nav-drawer" id="navDrawer">
+<button type="button" class="nav-overlay" id="navOverlay" onclick="toggleNav(false)" aria-label="Tutup menu" tabindex="-1"></button>
+<nav class="nav-drawer" id="navDrawer" aria-label="Navigasi utama" aria-hidden="true" inert>
   <div class="nav-header">
-    <h2>☕ Baristack App</h2>
+    <h2>Baristack App</h2>
     <p>Sistem Manajemen Usaha Minuman</p>
   </div>
-  <div class="nav-item active" onclick="goPage('dashboard')"><span class="nav-icon">🏠</span>Dashboard</div>
-  <div class="nav-item" onclick="goPage('po')"><span class="nav-icon">📅</span>PO & Orders</div>
-  <div class="nav-item" onclick="goPage('approval')"><span class="nav-icon">🤖</span>Status WhatsApp</div>
-  <div class="nav-item" onclick="goPage('riwayat')"><span class="nav-icon">📋</span>Riwayat Penjualan</div>
-  <div class="nav-item" onclick="goPage('kalkulator')"><span class="nav-icon">🧮</span>Kalkulator Produksi</div>
-  <div class="nav-item" onclick="goPage('stok')"><span class="nav-icon">📦</span>Stok & Bahan Baku</div>
-  <div class="nav-item" onclick="goPage('resep')"><span class="nav-icon">📝</span>Resep Menu</div>
-  <div class="nav-item" onclick="goPage('pengeluaran')"><span class="nav-icon">💸</span>Belanja & Pengeluaran</div>
-  <div class="nav-item" onclick="goPage('laporan')"><span class="nav-icon">📊</span>Laporan Harian</div>
-  <div class="nav-item" onclick="goPage('pengaturan')"><span class="nav-icon">⚙️</span>Pengaturan & Backup</div>
-  <div class="nav-item logout" onclick="doLogout()"><span class="nav-icon">🚪</span>Keluar</div>
-</div>
+  <button type="button" class="nav-item active" data-page="dashboard" aria-current="page" onclick="goPage('dashboard')">Dashboard</button>
+  <button type="button" class="nav-item" data-page="po" onclick="goPage('po')">PO & Orders</button>
+  <button type="button" class="nav-item" data-page="approval" onclick="goPage('approval')">Status WhatsApp</button>
+  <button type="button" class="nav-item" data-page="riwayat" onclick="goPage('riwayat')">Riwayat Penjualan</button>
+  <button type="button" class="nav-item" data-page="kalkulator" onclick="goPage('kalkulator')">Kalkulator Produksi</button>
+  <button type="button" class="nav-item" data-page="stok" onclick="goPage('stok')">Stok & Bahan Baku</button>
+  <button type="button" class="nav-item" data-page="resep" onclick="goPage('resep')">Resep Menu</button>
+  <button type="button" class="nav-item" data-page="pengeluaran" onclick="goPage('pengeluaran')">Belanja & Pengeluaran</button>
+  <button type="button" class="nav-item" data-page="laporan" onclick="goPage('laporan')">Laporan Harian</button>
+  <button type="button" class="nav-item" data-page="pengaturan" onclick="goPage('pengaturan')">Pengaturan & Backup</button>
+  <button type="button" class="nav-item logout" onclick="doLogout()">Keluar</button>
+</nav>
 
 <!-- ============== PO & ORDERS ============== -->
 <div class="page" id="page-po">
@@ -115,21 +109,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <div id="poActiveOrdersPanel"></div>
 
   <div class="po-workspace">
-    <details class="card po-create-panel" open>
-      <summary><span><small>PO</small><strong>Buat atau jadwalkan PO</strong></span></summary>
-      <div class="form-grid po-create-fields">
-        <div class="field field-wide"><label for="poName">Nama PO</label><input id="poName" placeholder="Contoh: PO Senin / PO Jumat"></div>
-        <div class="field"><label for="poDate">Tanggal PO</label><input id="poDate" type="date"></div>
-        <div class="field"><label for="poOpenAt">Jam buka</label><input id="poOpenAt" type="time"></div>
-        <div class="field"><label for="poCutoffAt">Jam tutup</label><input id="poCutoffAt" type="time"></div>
-        <div class="field"><label for="poMaxCups">Max limit cup</label><input id="poMaxCups" type="number" min="1" value="20"></div>
-        <div class="field"><label for="poQrisTimeout">Batas kirim bukti QRIS (menit)</label><input id="poQrisTimeout" type="number" min="1" max="1440" value="30"></div>
-        <div class="field field-wide"><label>Alokasi bahan khusus PO (opsional)</label><div id="poIngredientAllocationFields"></div></div>
-      </div>
-      <button class="btn btn-primary btn-full" onclick="buatPo()">Simpan PO</button>
-    </details>
-
-    <div class="card po-order-form">
+    <div class="card po-order-form po-order-form-wide">
       <div class="po-card-heading">
         <div><span class="po-kicker">ORDER OFFLINE</span><h3 id="orderFormTitle">Catat penjualan langsung</h3></div>
       </div>
@@ -152,7 +132,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== BOT STATUS ============== -->
 <div class="page" id="page-approval">
-  <div class="section-title"><span class="emoji">🤖</span> Status WhatsApp</div>
+  <div class="section-title">Status WhatsApp</div>
   <div class="card">
     <div class="card-title">Gateway Baileys</div>
     <div id="gatewayStatusCard">Belum ada heartbeat gateway.</div>
@@ -162,7 +142,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== DASHBOARD ============== -->
 <div class="page active" id="page-dashboard">
-  <div class="section-title"><span class="emoji">📊</span> Dashboard</div>
+  <div class="section-title">Dashboard</div>
 
   <div id="alertPanel"></div>
 
@@ -190,17 +170,17 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   </div>
 
   <div class="card">
-    <div class="card-title">🏆 Top 5 Customer Setia</div>
-    <div id="topCustomer"><div style="color:var(--abu2);font-size:13px;">Belum ada data penjualan.</div></div>
+    <div class="card-title">Top 5 Customer Setia</div>
+    <div id="topCustomer" class="empty-state"><strong>Belum ada pelanggan teratas</strong><span>Catat penjualan untuk mulai melihat pelanggan yang paling sering membeli.</span></div>
   </div>
 
   <div class="card">
-    <div class="card-title">📈 Penjualan Per Menu (7 Hari)</div>
+    <div class="card-title">Penjualan Per Menu (7 Hari)</div>
     <div class="chart-wrap"><canvas id="chartDashboard" role="img" aria-label="Grafik penjualan per menu 7 hari terakhir">Grafik penjualan.</canvas></div>
   </div>
 
   <div class="card">
-    <div class="card-title">📦 Status Stok Bahan</div>
+    <div class="card-title">Status Stok Bahan</div>
     <div id="stokSummary"></div>
   </div>
 
@@ -212,7 +192,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== RIWAYAT ============== -->
 <div class="page" id="page-riwayat">
-  <div class="section-title"><span class="emoji">📋</span> Riwayat Penjualan</div>
+  <div class="section-title">Riwayat Penjualan</div>
   <div class="card">
     <label>Filter Tanggal</label>
     <input type="date" id="filterTanggal" onchange="renderRiwayat()">
@@ -225,12 +205,12 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== KALKULATOR ============== -->
 <div class="page" id="page-kalkulator">
-  <div class="section-title"><span class="emoji">🧮</span> Kalkulator Produksi</div>
+  <div class="section-title">Kalkulator Produksi</div>
   <div class="card">
     <div class="card-title">Jumlah Cup Per Menu</div>
     <div id="kalcInputs"></div>
     <div class="btn-group">
-      <button class="btn btn-primary btn-full" onclick="hitungKalkulator()">🔢 Hitung Kebutuhan</button>
+      <button class="btn btn-primary btn-full" onclick="hitungKalkulator()">Hitung Kebutuhan</button>
     </div>
   </div>
   <div id="kalcResult"></div>
@@ -239,10 +219,9 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== STOK ============== -->
 <div class="page" id="page-stok">
-  <div class="section-title"><span class="emoji">📦</span> Stok & Bahan Baku</div>
+  <div class="section-title">Stok & Bahan Baku</div>
   <div class="alert warning">
-    <span class="alert-icon">💡</span>
-    <div>Tap baris untuk edit harga, stok, atau threshold. Input harga per kemasan — HPP per satuan dihitung otomatis. Simple syrup HPP dihitung otomatis dari harga gula pasir + air.</div>
+    <div>Tap baris untuk edit harga, stok, atau threshold. Input harga per kemasan. HPP per satuan dihitung otomatis. Simple syrup HPP dihitung otomatis dari harga gula pasir dan air.</div>
   </div>
   <div id="stokList"></div>
   <div id="restockPanel" style="margin-top:8px;"></div>
@@ -251,9 +230,8 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== RESEP ============== -->
 <div class="page" id="page-resep">
-  <div class="section-title"><span class="emoji">📝</span> Resep Menu</div>
+  <div class="section-title">Resep Menu</div>
   <div class="alert success">
-    <span class="alert-icon">✏️</span>
     <div>Tap menu untuk edit resep dan harga jual. Perubahan tersimpan otomatis.</div>
   </div>
   <div id="resepList"></div>
@@ -262,7 +240,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== PENGELUARAN ============== -->
 <div class="page" id="page-pengeluaran">
-  <div class="section-title"><span class="emoji">💸</span> Belanja & Pengeluaran</div>
+  <div class="section-title">Belanja & Pengeluaran</div>
 
   <div class="stats-grid">
     <div class="stat-card hijau" style="grid-column:span 2">
@@ -272,8 +250,8 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     </div>
   </div>
 
-  <details class="card">
-    <summary><span><small>DATA KAS</small><strong>Riwayat mutasi kas</strong></span></summary>
+  <details class="card cash-history">
+    <summary><span><small>DATA KAS</small><strong>Riwayat mutasi kas</strong></span><b aria-hidden="true">⌄</b></summary>
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
       <span>Riwayat mutasi terbaru</span>
       <span id="mutasiCount" style="font-size:12px;color:var(--abu2)"></span>
@@ -281,15 +259,15 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div id="kasMutasiList"></div>
   </details>
 
-  <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('belanjaBahan')">🛒 Belanja Bahan</button>
-    <button class="tab-btn" onclick="switchTab('pemasukanLain')">💚 Pemasukan Lain</button>
-    <button class="tab-btn" onclick="switchTab('pengeluaranLain')">💔 Pengeluaran Lain</button>
+  <div class="tabs" role="tablist" aria-label="Jenis transaksi">
+    <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-belanjaBahan" onclick="switchTab('belanjaBahan')">Belanja Bahan</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-pemasukanLain" tabindex="-1" onclick="switchTab('pemasukanLain')">Pemasukan Lain</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-pengeluaranLain" tabindex="-1" onclick="switchTab('pengeluaranLain')">Pengeluaran Lain</button>
   </div>
 
   <!-- BELANJA BAHAN -->
-  <div id="tab-belanjaBahan" class="card">
-    <div class="card-title">🛒 Catat Belanja Bahan</div>
+  <div id="tab-belanjaBahan" class="card" role="tabpanel">
+    <div class="card-title">Catat Belanja Bahan</div>
     <label>Pilih Bahan</label>
     <select id="belBahan"></select>
 
@@ -301,43 +279,43 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <label>Dibayar dari</label>
     <select id="belAccount"></select>
     <div id="previewHargaSatuan" style="background:var(--hijau4);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:var(--hijau);font-weight:600;">
-      💰 Harga per satuan: <span id="previewHargaValue">Rp0,00</span> / <span id="previewSatuan">gram</span>
+      Harga per satuan: <span id="previewHargaValue">Rp0,00</span> / <span id="previewSatuan">gram</span>
     </div>
 
     <label>Keterangan (opsional)</label>
     <input type="text" id="belKeterangan" placeholder="Contoh: beli 2 kotak susu">
 
     <div class="btn-group">
-      <button class="btn btn-primary btn-full" onclick="simpanBelanjaB()">✅ Simpan Belanja</button>
+      <button class="btn btn-primary btn-full" onclick="simpanBelanjaB()">Simpan Belanja</button>
     </div>
   </div>
 
   <!-- PEMASUKAN LAIN -->
-  <div id="tab-pemasukanLain" class="card" style="display:none">
-    <div class="card-title">💚 Catat Pemasukan Lain</div>
+  <div id="tab-pemasukanLain" class="card" role="tabpanel" style="display:none">
+    <div class="card-title">Catat Pemasukan Lain</div>
     <label>Jumlah (Rp)</label>
     <input type="number" id="pmasJumlah" placeholder="0">
     <label>Sumber / Keterangan</label>
     <input type="text" id="pmasKet" placeholder="Contoh: Tips, piutang lunas...">
     <div class="btn-group">
-      <button class="btn btn-primary btn-full" onclick="simpanPemasukan()">✅ Simpan Pemasukan</button>
+      <button class="btn btn-primary btn-full" onclick="simpanPemasukan()">Simpan Pemasukan</button>
     </div>
   </div>
 
   <!-- PENGELUARAN LAIN -->
-  <div id="tab-pengeluaranLain" class="card" style="display:none">
-    <div class="card-title">💔 Catat Pengeluaran Lain</div>
+  <div id="tab-pengeluaranLain" class="card" role="tabpanel" style="display:none">
+    <div class="card-title">Catat Pengeluaran Lain</div>
     <label>Jumlah (Rp)</label>
     <input type="number" id="pengeJumlah" placeholder="0">
     <label>Keperluan / Keterangan</label>
     <input type="text" id="pengeKet" placeholder="Contoh: Ambil untung, bayar utang...">
     <div class="btn-group">
-      <button class="btn btn-primary btn-full" onclick="simpanPengeluaran()">✅ Simpan Pengeluaran</button>
+      <button class="btn btn-primary btn-full" onclick="simpanPengeluaran()">Simpan Pengeluaran</button>
     </div>
   </div>
 
   <div class="card" style="margin-top:4px;">
-    <div class="card-title">📋 Riwayat Pengeluaran & Pemasukan</div>
+    <div class="card-title">Riwayat Pengeluaran & Pemasukan</div>
     <div id="pengeluaranList"></div>
   </div>
   <div class="page-bottom"></div>
@@ -345,30 +323,30 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== LAPORAN ============== -->
 <div class="page" id="page-laporan">
-  <div class="section-title"><span class="emoji">📄</span> Laporan Harian</div>
+  <div class="section-title">Laporan Harian</div>
 
     <div class="card">
       <div class="card-title">Generate Laporan</div>
       <label>Tanggal Laporan</label>
       <input type="date" id="laporanTanggal">
       <div class="btn-group">
-        <button class="btn btn-primary btn-full" onclick="generateLaporan()">📄 Generate & Download Laporan</button>
+        <button class="btn btn-primary btn-full" onclick="generateLaporan()">Generate & Download Laporan</button>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">📁 Laporan Tersimpan</div>
-      <div id="laporanSavedList"><div style="color:var(--abu2);font-size:13px;">Belum ada laporan tersimpan.</div></div>
+      <div class="card-title">Laporan Tersimpan</div>
+      <div id="laporanSavedList" class="empty-state"><strong>Belum ada laporan tersimpan</strong><span>Pilih tanggal, lalu generate laporan untuk menyimpannya di sini.</span></div>
     </div>
     <div class="page-bottom"></div>
   </div>
 
   <!-- ============== PENGATURAN ============== -->
   <div class="page" id="page-pengaturan">
-    <div class="section-title"><span class="emoji">⚙️</span> Pengaturan & Backup</div>
+    <div class="section-title">Pengaturan & Backup</div>
 
     <div class="card">
-      <div class="card-title">💰 Saldo Kas Awal</div>
+      <div class="card-title">Saldo Kas Awal</div>
       <label>Set Saldo Kas (Rp)</label>
       <input type="number" id="setSaldo" placeholder="Contoh: 59281">
       <div class="btn-group">
@@ -377,15 +355,21 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     </div>
 
     <div class="card">
-      <div class="card-title">📊 Import & Export CSV</div>
+      <div class="card-title">Import & Export CSV</div>
       <p style="font-size:13px;color:var(--abu);margin-bottom:10px;line-height:1.6">
         Export data untuk diedit di Google Sheets/Excel, lalu import kembali file CSV-nya ke Baristack App.
       </p>
-      <div class="btn-group">
-        <button class="btn btn-primary" onclick="exportPenjualanCSV()">📋 Export Data Penjualan</button>
-        <button class="btn btn-secondary" onclick="exportKasCSV()">💰 Export Laporan Kas</button>
-        <button id="settingsImportSalesButton" class="btn btn-outline" onclick="document.getElementById('importPenjualanFile').click()">⬆️ Import Data Penjualan</button>
-        <button id="settingsImportCashButton" class="btn btn-outline" onclick="document.getElementById('importKasFile').click()">⬆️ Import Laporan Kas</button>
+      <div class="transfer-actions">
+        <div class="transfer-pair">
+          <strong>Data penjualan</strong>
+          <button class="btn btn-primary" onclick="exportPenjualanCSV()">Export CSV</button>
+          <button id="settingsImportSalesButton" class="btn btn-outline" onclick="document.getElementById('importPenjualanFile').click()">Import CSV</button>
+        </div>
+        <div class="transfer-pair">
+          <strong>Laporan kas</strong>
+          <button class="btn btn-primary" onclick="exportKasCSV()">Export CSV</button>
+          <button id="settingsImportCashButton" class="btn btn-outline" onclick="document.getElementById('importKasFile').click()">Import CSV</button>
+        </div>
       </div>
       <input id="importPenjualanFile" type="file" accept=".csv,text/csv" hidden onchange="importPenjualanCSV(event)">
       <input id="importKasFile" type="file" accept=".csv,text/csv" hidden onchange="importKasCSV(event)">
@@ -393,25 +377,25 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
       <div id="importKasLog" class="import-log is-hidden"></div>
       <div id="settingsImportLog" class="import-log"></div>
       <div style="margin-top:10px;padding:10px;background:var(--krem2);border-radius:8px;font-size:12px;color:var(--abu2);line-height:1.6">
-        📌 File hasil export boleh diedit, lalu tekan tombol import yang sesuai. Import penjualan bersifat historis dan tidak mengurangi stok hari ini; import kas akan memperbarui saldo.
+        File hasil export boleh diedit, lalu tekan tombol import yang sesuai. Import penjualan bersifat historis dan tidak mengurangi stok hari ini; import kas akan memperbarui saldo.
       </div>
     </div>
 
     <div class="card">
-      <div class="card-title">🗂️ Backup Data</div>
+      <div class="card-title">Backup Data</div>
       <p style="font-size:13px;color:var(--abu);margin-bottom:10px;line-height:1.6">
         Unduh snapshot JSON untuk arsip atau pulihkan setting stok, threshold, harga, resep, dan saldo kas. Riwayat transaksi dipulihkan lewat import CSV agar tidak tertimpa tanpa sengaja.
       </p>
       <div class="btn-group">
-        <button class="btn btn-secondary" onclick="exportData()">⬇️ Unduh Backup JSON</button>
-        <button class="btn btn-outline" onclick="document.getElementById('importJsonFile').click()">⬆️ Import Setting JSON</button>
+        <button class="btn btn-secondary" onclick="exportData()">Unduh Backup JSON</button>
+        <button class="btn btn-outline" onclick="document.getElementById('importJsonFile').click()">Import Setting JSON</button>
       </div>
       <input id="importJsonFile" type="file" accept=".json,application/json" hidden onchange="importData(event)">
       <div id="importJsonLog" class="import-log"></div>
     </div>
 
   <div class="card">
-    <div class="card-title">ℹ️ Tentang Aplikasi</div>
+    <div class="card-title">Tentang Aplikasi</div>
     <p style="font-size:13px;color:var(--abu);line-height:1.7;">
       <strong>Baristack App</strong><br>
       Manajemen usaha minuman: kopi, matcha, latte, americano.<br>
@@ -423,10 +407,27 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 </div>
 
 <!-- ============== MODALS ============== -->
+<!-- Buka PO Modal -->
+<div class="modal-backdrop" id="modalBukaPo" aria-hidden="true" onclick="closeModalFromBackdrop(event)">
+  <div class="modal modal-compact" role="dialog" aria-modal="true" aria-labelledby="modalBukaPoTitle" tabindex="-1">
+    <button type="button" class="modal-close" onclick="closeModal('modalBukaPo')" aria-label="Tutup dialog"><span aria-hidden="true">✕</span></button>
+    <div class="modal-title" id="modalBukaPoTitle">Buka PO sekarang</div>
+    <input type="hidden" id="poDraftId">
+    <div class="form-grid po-quick-fields">
+      <div class="field"><label for="poCutoffAt">Jam tutup</label><input id="poCutoffAt" type="time" value="17:50"></div>
+      <div class="field"><label for="poMaxCups">Maksimal cup</label><input id="poMaxCups" type="number" min="1" value="20"></div>
+      <div class="field"><label for="poMilkLimit" id="poMilkLimitLabel">Maksimal susu</label><input id="poMilkLimit" type="number" min="0" step="any" placeholder="Contoh: 2000" required></div>
+      <div class="field"><label for="poMatchaLimit" id="poMatchaLimitLabel">Maksimal matcha</label><input id="poMatchaLimit" type="number" min="0" step="any" placeholder="Contoh: 100" required></div>
+    </div>
+    <p class="form-help">PO langsung aktif setelah disimpan. Batas bahan memakai stok dan resep sistem utama.</p>
+    <button class="btn btn-primary btn-full" onclick="buatPo()">Buka PO</button>
+  </div>
+</div>
+
 <!-- Edit Bahan Modal -->
-<div class="modal-backdrop" id="modalBahan">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('modalBahan')">✕</button>
+<div class="modal-backdrop" id="modalBahan" aria-hidden="true" onclick="closeModalFromBackdrop(event)">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalBahanTitle" tabindex="-1">
+    <button type="button" class="modal-close" onclick="closeModal('modalBahan')" aria-label="Tutup dialog"><span aria-hidden="true">✕</span></button>
     <div class="modal-title" id="modalBahanTitle">Edit Bahan</div>
     <input type="hidden" id="editBahanId">
 
@@ -440,7 +441,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <input type="number" id="editBahanStok" step="any" placeholder="Contoh: 1000">
 
     <div id="editBahanPriceFields" style="background:var(--krem2);padding:10px;border-radius:8px;margin:10px 0">
-      <label style="margin-top:0">💰 Harga Per Kemasan (Rp)</label>
+      <label style="margin-top:0">Harga Per Kemasan (Rp)</label>
       <input type="number" id="editBahanHargaKemasan" step="any" placeholder="Contoh: 67000">
 
       <label>Isi Per Kemasan (dalam satuan dasar)</label>
@@ -460,9 +461,9 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 </div>
 
 <!-- Edit Resep Modal -->
-<div class="modal-backdrop" id="modalResep">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('modalResep')">✕</button>
+<div class="modal-backdrop" id="modalResep" aria-hidden="true" onclick="closeModalFromBackdrop(event)">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalResepTitle" tabindex="-1">
+    <button type="button" class="modal-close" onclick="closeModal('modalResep')" aria-label="Tutup dialog"><span aria-hidden="true">✕</span></button>
     <div class="modal-title" id="modalResepTitle">Edit Resep</div>
     <input type="hidden" id="editResepId">
     <label>Nama Menu</label>
@@ -478,10 +479,10 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 </div>
 
 <!-- Detail Penjualan Modal -->
-<div class="modal-backdrop" id="modalDetail">
-  <div class="modal">
-    <button class="modal-close" onclick="closeModal('modalDetail')">✕</button>
-    <div class="modal-title">Detail Transaksi</div>
+<div class="modal-backdrop" id="modalDetail" aria-hidden="true" onclick="closeModalFromBackdrop(event)">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalDetailTitle" tabindex="-1">
+    <button type="button" class="modal-close" onclick="closeModal('modalDetail')" aria-label="Tutup dialog"><span aria-hidden="true">✕</span></button>
+    <div class="modal-title" id="modalDetailTitle">Detail Transaksi</div>
     <div id="modalDetailContent"></div>
     <div class="btn-group">
       <button id="deleteSaleBtn" class="btn btn-danger btn-sm" onclick="hapusPenjualan()">Batalkan & refund</button>
@@ -577,7 +578,7 @@ async function importPenjualanV2(file) {
   if (!confirm(`Import ${rows.length} penjualan historis${skipped?` dan lewati ${skipped} baris tidak valid`:''}? File yang sama tidak akan digandakan.`)) return false;
   const batchKey=await importFileHash(content);
   const ok=await runV2Mutation('Mengimpor penjualan...',()=>window.kopsusrenServices.importSales({batchKey,rows}),`${rows.length} penjualan berhasil diimpor`);
-  if (ok) setImportLog('importPenjualanLog',`✅ ${rows.length} baris diproses${skipped?`, ${skipped} dilewati`:''}.`);
+  if (ok) setImportLog('importPenjualanLog',`${rows.length} baris diproses${skipped?`, ${skipped} dilewati`:''}.`);
   return ok;
 }
 
@@ -605,7 +606,7 @@ async function importKasV2(file) {
   if (!confirm(`Import ${rows.length} mutasi kas${skipped?` dan lewati ${skipped} baris tidak valid`:''}? Saldo kas akan berubah mengikuti nilai Masuk/Keluar.`)) return false;
   const batchKey=await importFileHash(content);
   const ok=await runV2Mutation('Mengimpor kas...',()=>window.kopsusrenServices.importCash({batchKey,rows}),`${rows.length} mutasi kas berhasil diimpor`);
-  if (ok) setImportLog('importKasLog',`✅ ${rows.length} baris diproses${skipped?`, ${skipped} dilewati`:''}.`);
+  if (ok) setImportLog('importKasLog',`${rows.length} baris diproses${skipped?`, ${skipped} dilewati`:''}.`);
   return ok;
 }
 
@@ -614,7 +615,7 @@ async function importPenjualanCSV(event) {
   if (!file) return;
   if (state.isV2) {
     try { await importPenjualanV2(file); }
-    catch(error) { setImportLog('importPenjualanLog',`❌ ${error.message}`,true); showToast(error.message,'error'); }
+    catch(error) { setImportLog('importPenjualanLog',error.message,true); showToast(error.message,'error'); }
     finally { event.target.value=''; }
     return;
   }
@@ -624,7 +625,7 @@ async function importPenjualanCSV(event) {
     const content = e.target.result;
     const rows = content.split(/\r?\n/);
 
-    // 🛠️ FIX 1: Trim semua header biar spasi hantu kayak " Tanggal" ilang bersih
+    // Normalize header supaya spasi di awal atau akhir tidak mengubah pencocokan kolom.
     const headers = rows[0].split(',').map(h => h.trim().toLowerCase());
 
     let imported = 0;
@@ -663,12 +664,12 @@ async function importPenjualanCSV(event) {
     const ketIndex = headers.findIndex(h => h.includes('keterangan'));
 
     if (tglIndex === -1 || menuIndex === -1) {
-      setImportLog('importPenjualanLog','❌ Format CSV tidak sesuai (butuh kolom Tanggal & Menu)',true);
+      setImportLog('importPenjualanLog','Format CSV tidak sesuai (butuh kolom Tanggal & Menu)',true);
       return;
     }
 
     for (let i = 1; i < rows.length; i++) {
-      // 🛠️ FIX 2: Jika baris bener-bener kosong atau cuma berisi koma doang (,,,,,,), LANGSUNG SKIP
+      // Lewati baris kosong, termasuk baris yang hanya berisi delimiter.
       const barisMentah = rows[i].replace(/,/g, '').trim();
       if (!barisMentah) continue;
 
@@ -677,12 +678,12 @@ async function importPenjualanCSV(event) {
       let tgl = cols[tglIndex]?.trim();
       const menuNama = cols[menuIndex]?.trim();
 
-      // 🛠️ FIX 3: Skip jika baris tersebut secara tidak sengaja menduplikasi teks header "Menu"
+      // Lewati header yang terduplikasi di tengah file.
       if (!menuNama || menuNama.toLowerCase() === 'menu') {
         continue;
       }
 
-      // 💡 PINTER 2: Logika Sticky Date
+      // Pertahankan tanggal terakhir untuk baris lanjutan yang kolom tanggalnya kosong.
       if (tgl) {
         lastValidTanggal = tgl;
       } else {
@@ -692,17 +693,17 @@ async function importPenjualanCSV(event) {
       // Cari menuId berdasarkan nama
       const menu = state.menu.find(m => m.nama.toLowerCase() === menuNama.toLowerCase());
       if (!menu) {
-        console.warn(`❌ Menu di CSV gak terdaftar di aplikasi: "${menuNama}" (Baris ke-${i + 1})`);
+        console.warn(`Menu di CSV tidak terdaftar di aplikasi: "${menuNama}" (baris ${i + 1})`);
         errors++;
         continue;
       }
 
-      // 💡 PINTER 3: Fallback Nama Kosong
+      // Gunakan nama generik jika kolom customer kosong.
       const rawCustomer = custIndex !== -1 ? cols[custIndex]?.trim() : '';
       const customer = rawCustomer || 'Anonim';
       const kelas = kelasIndex !== -1 ? cols[kelasIndex]?.trim() : '';
 
-      // 💡 PINTER 4: Fallback Harga Kosong
+      // Gunakan harga menu saat harga pada CSV kosong.
       let hargaSatuan = parseFloat(cols[hargaIndex]?.replace(/[^0-9.-]/g, '')) || 0;
       if (hargaSatuan === 0) {
         hargaSatuan = menu.harga || menu.hargaJual || 0;
@@ -717,7 +718,7 @@ async function importPenjualanCSV(event) {
       const totalHarga = hargaSatuan * jumlah;
       const modal = modalPerCup * jumlah;
 
-      // 🛠️ PERBAIKAN: Format tanggal ke standar YYYY-MM-DD
+      // Simpan tanggal dalam format YYYY-MM-DD.
       const tanggalValid = formatTanggalKeStandar(tgl);
 
       const transaksi = {
@@ -738,12 +739,12 @@ async function importPenjualanCSV(event) {
 
       state.penjualan.push(transaksi);
       imported++;
-    } // 🏁 Akhir dari looping FOR
+    } // Akhir dari looping FOR
 
-    // 🔥 🛠️ UTAMA: URUTKAN SEKALIGUS SETELAH IMPORT SELESAI
+    // Urutkan satu kali setelah semua baris selesai diproses.
     state.penjualan.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
 
-    // 🔄 Simpan data dan segarkan tampilan UI aplikasi
+    // Simpan data dan segarkan tampilan UI aplikasi
     if (typeof saveState === 'function') saveState();
     if (typeof renderRiwayat === 'function') renderRiwayat();
     if (typeof renderDashboard === 'function') renderDashboard();
@@ -751,9 +752,9 @@ async function importPenjualanCSV(event) {
     // Tampilkan log rangkuman sukses di layar browser
     const logEl = document.getElementById('importPenjualanLog');
     if (logEl) {
-      logEl.innerHTML = `<span style="color:var(--hijau)">✅ Berhasil mengimpor ${imported} data penjualan bersih!</span>`;
+      logEl.innerHTML = `<span style="color:var(--hijau)">Berhasil mengimpor ${imported} data penjualan bersih.</span>`;
     }
-  }; // 🏁 Akhir dari reader.onload
+  }; // Akhir dari reader.onload
 
   reader.readAsText(file, 'UTF-8');
   event.target.value = '';
@@ -764,7 +765,7 @@ async function importKasCSV(event) {
   if (!file) return;
   if (state.isV2) {
     try { await importKasV2(file); }
-    catch(error) { setImportLog('importKasLog',`❌ ${error.message}`,true); showToast(error.message,'error'); }
+    catch(error) { setImportLog('importKasLog',error.message,true); showToast(error.message,'error'); }
     finally { event.target.value=''; }
     return;
   }
@@ -817,7 +818,7 @@ async function importKasCSV(event) {
 
     state.saldoKas = saldoSaatIni;
     saveState();
-    setImportLog('importKasLog',`✅ Berhasil import ${imported} mutasi kas`);
+    setImportLog('importKasLog',`Berhasil import ${imported} mutasi kas`);
     renderCashOverview();
     renderDashboard();
     showToast(`Import kas selesai: ${imported} mutasi`);
@@ -1081,13 +1082,9 @@ function updateSyncStatus(connected) {
   const el = document.getElementById('syncStatus');
   if (!el) return;
   if (connected === true) {
-    el.textContent = '☁️ Tersimpan';
-    el.style.opacity = '.7';
-    el.style.color = 'var(--hijau3)';
+    el.textContent = 'Tersimpan';
   } else if (connected === false) {
-    el.textContent = '💻 Offline';
-    el.style.opacity = '.7';
-    el.style.color = 'var(--kuning)';
+    el.textContent = 'Offline';
   } else {
     el.textContent = '';
   }
@@ -1177,14 +1174,12 @@ function showToast(msg, type='success') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
 
-  const icons = { success:'✅', error:'❌', warning:'⚠️', info:'ℹ️' };
   const t = document.createElement('div');
   t.className = `toast toast-${type}`;
-  const icon = document.createElement('span');
+  t.setAttribute('role', type === 'error' ? 'alert' : 'status');
   const message = document.createElement('span');
-  icon.textContent = icons[type] || 'ℹ️';
   message.textContent = String(msg ?? '');
-  t.append(icon, message);
+  t.append(message);
   container.appendChild(t);
 
   setTimeout(() => {
@@ -1195,19 +1190,38 @@ function showToast(msg, type='success') {
 function showLoading(text = 'Memuat data...') {
   const overlay = document.getElementById('loadingOverlay');
   const textEl = document.getElementById('loadingText');
-  if (overlay) overlay.classList.add('open');
+  if (overlay) {
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
   if (textEl) textEl.textContent = text;
 }
 
 function hideLoading() {
   const overlay = document.getElementById('loadingOverlay');
-  if (overlay) overlay.classList.remove('open');
+  if (overlay) {
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
 }
 
 // ============= NAVIGATION =============
-function toggleNav() {
-  document.getElementById('navDrawer').classList.toggle('open');
-  document.getElementById('navOverlay').classList.toggle('open');
+function toggleNav(forceOpen) {
+  const drawer = document.getElementById('navDrawer');
+  const overlay = document.getElementById('navOverlay');
+  const menuButton = document.getElementById('menuButton');
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !drawer.classList.contains('open');
+  drawer.classList.toggle('open', shouldOpen);
+  overlay.classList.toggle('open', shouldOpen);
+  drawer.setAttribute('aria-hidden', String(!shouldOpen));
+  drawer.inert = !shouldOpen;
+  menuButton.setAttribute('aria-expanded', String(shouldOpen));
+  menuButton.setAttribute('aria-label', shouldOpen ? 'Tutup menu' : 'Buka menu');
+  if (shouldOpen) {
+    requestAnimationFrame(() => (drawer.querySelector('[aria-current="page"]') || drawer.querySelector('.nav-item'))?.focus());
+  } else if (document.activeElement && drawer.contains(document.activeElement)) {
+    menuButton.focus();
+  }
 }
 function goPage(id) {
   if (id === 'penjualan') id = 'po';
@@ -1215,22 +1229,13 @@ function goPage(id) {
   activePage = id;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n=>{
-    if(n.textContent.trim().includes(
-      id==='dashboard'?'Dashboard':
-      id==='po'?'PO & Orders':
-      id==='approval'?'Status WhatsApp':
-      id==='riwayat'?'Riwayat':
-      id==='kalkulator'?'Kalkulator':
-      id==='stok'?'Stok':
-      id==='resep'?'Resep':
-      id==='pengeluaran'?'Belanja':
-      id==='laporan'?'Laporan':
-      id==='pengaturan'?'Pengaturan':''
-    )) n.classList.add('active');
+  document.querySelectorAll('.nav-item[data-page]').forEach(n=>{
+    const active = n.dataset.page === id;
+    n.classList.toggle('active', active);
+    if (active) n.setAttribute('aria-current', 'page');
+    else n.removeAttribute('aria-current');
   });
-  toggleNav();
+  toggleNav(false);
   renderPage(id);
 }
 
@@ -1288,11 +1293,31 @@ function renderPoActivePanel(openSessions, sessions) {
   if (!el) return;
   const active = getActivePo(openSessions);
   if (!active) {
+    const scheduled = [...(sessions || [])]
+      .filter(po => po.status === 'DRAFT' && new Date(po.cutoff_at || 0) > new Date())
+      .sort((a, b) => new Date(a.open_at || 0) - new Date(b.open_at || 0))[0];
+    if (scheduled) {
+      const opens = new Date(scheduled.open_at);
+      const opensText = opens.toLocaleString('id-ID', { timeZone:'Asia/Jakarta', weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+      el.innerHTML = `<div class="card po-active-card is-scheduled">
+        <div>
+          <span class="po-kicker">DRAFT PO</span>
+          <h3>${safeText(scheduled.name)}</h3>
+          <p>Draft lama, sebelumnya dijadwalkan ${safeText(opensText)} WIB.</p>
+          <div class="po-active-actions">
+            <button class="btn btn-primary btn-sm" onclick="openPoSetup('${scheduled.id}')">Buka sekarang</button>
+          </div>
+        </div>
+        <span class="badge badge-kuning">Belum dibuka</span>
+      </div>`;
+      return;
+    }
     el.innerHTML = `<div class="card po-active-card is-empty">
       <div>
         <span class="po-kicker">STATUS SEKARANG</span>
         <h3>Belum ada PO yang dibuka</h3>
-        <p>Isi kartu “Buka PO Sekarang”. Kalau stok aman, PO langsung aktif.</p>
+        <p>Buat PO baru untuk mulai menerima pesanan WhatsApp.</p>
+        <div class="po-active-actions"><button class="btn btn-primary btn-sm" onclick="openPoSetup()">Buka PO sekarang</button></div>
       </div>
       <span class="badge badge-abu">Belum dibuka</span>
     </div>`;
@@ -1323,13 +1348,32 @@ function renderPoActivePanel(openSessions, sessions) {
   </div>`;
 }
 
-function renderPoAllocationFields() {
-  const el = document.getElementById('poIngredientAllocationFields');
-  if (!el) return;
-  el.innerHTML = (state.bahan || []).map(item => `<div class="po-allocation-row">
-    <span>${safeText(item.nama)} <small>(${safeText(item.satuan)})</small></span>
-    <input class="po-allocation-input" data-ingredient-id="${item.id}" type="number" min="0" step="any" placeholder="Tanpa batas khusus">
-  </div>`).join('');
+function poIngredient(kind) {
+  const patterns = kind === 'milk' ? ['MILK', 'SUSU'] : ['MATCHA'];
+  return (state.bahan || []).find(item => patterns.some(pattern => `${item.code || ''} ${item.nama || ''}`.toUpperCase().includes(pattern))) || null;
+}
+
+function openPoSetup(draftId = '') {
+  const draft = (state.poSessions || []).find(po => po.id === draftId && po.status === 'DRAFT') || null;
+  const milk = poIngredient('milk');
+  const matcha = poIngredient('matcha');
+  document.getElementById('poDraftId').value = draft?.id || '';
+  document.getElementById('poCutoffAt').value = '17:50';
+  document.getElementById('poMaxCups').value = draft?.max_total_cups || 20;
+  const fields = [
+    ['poMilkLimit', 'poMilkLimitLabel', milk, 'Maksimal susu'],
+    ['poMatchaLimit', 'poMatchaLimitLabel', matcha, 'Maksimal matcha'],
+  ];
+  for (const [inputId, labelId, ingredient, fallbackLabel] of fields) {
+    const input = document.getElementById(inputId);
+    input.dataset.ingredientId = ingredient?.id || '';
+    input.disabled = !ingredient;
+    const existing = (draft?.ingredient_limits || []).find(limit => limit.ingredient_id === ingredient?.id);
+    input.value = existing?.max_quantity || '';
+    input.placeholder = ingredient ? `Tersedia ${Number(ingredient.available || ingredient.stok || 0)} ${ingredient.satuan}` : 'Bahan tidak ditemukan';
+    document.getElementById(labelId).textContent = ingredient ? `Maksimal ${ingredient.nama} (${ingredient.satuan})` : fallbackLabel;
+  }
+  openModal('modalBukaPo');
 }
 
 function renderPoActiveOrdersPanel(openSessions, poOrders) {
@@ -1385,16 +1429,13 @@ function renderPo() {
   document.getElementById('orderProduct').innerHTML = products.map(product => `<option value="${product.id}">${safeText(product.nama)} · ${rp(product.harga)}</option>`).join('');
   renderPoActivePanel(openSessions, sessions);
   renderPoActiveOrdersPanel(openSessions, poOrders);
-  renderPoAllocationFields();
-  if (!document.getElementById('poDate').value) document.getElementById('poDate').value = today();
-
   const poSummary = active?.summary || null;
   const productionHtml = poSummary?.totalCups ? `
     <div class="card po-production">
       <div class="card-title">Kebutuhan produksi aktif</div>
       <div class="po-menu-chips">${(poSummary.productionMenuTotals || poSummary.menuTotals || []).map(item => `<div class="po-menu-chip">${safeText(item.name)}<strong>${item.quantity} cup</strong></div>`).join('')}</div>
       <div class="po-ingredient-list">${(poSummary.productionIngredientTotals || poSummary.ingredientTotals || []).map(item => `<div><span>${safeText(item.name)}</span><strong>${Number(Number(item.quantity).toFixed(2))} ${safeText(item.unit)}</strong></div>`).join('')}</div>
-    </div>` : '<div class="card po-empty"><span>🧾</span>Belum ada order aktif untuk diproduksi.</div>';
+    </div>` : '';
 
   document.getElementById('poQueueHint').textContent = `${activeOrders.length} aktif · ${poOrders.length} total`;
   document.getElementById('poOrders').innerHTML = productionHtml + poOrders.slice(0, 40).map(order => {
@@ -1436,42 +1477,37 @@ async function runV2Mutation(loadingText, work, successText) {
 }
 
 async function buatPo() {
-  const ingredientLimits = [...document.querySelectorAll('.po-allocation-input')]
+  const limitInputs = ['poMilkLimit', 'poMatchaLimit'].map(id => document.getElementById(id));
+  const maxTotalCups = Number(document.getElementById('poMaxCups').value);
+  if (!(maxTotalCups > 0)) return showToast('Isi maksimal cup lebih dari 0', 'error');
+  if (limitInputs.some(input => !input.disabled && !(Number(input.value) > 0))) return showToast('Isi maksimal susu dan matcha lebih dari 0', 'error');
+  const ingredientLimits = limitInputs
     .map(input => ({ ingredientId: input.dataset.ingredientId, maxQuantity: Number(input.value), autoCloseThreshold: 90 }))
-    .filter(item => item.maxQuantity > 0);
-  const poDate = document.getElementById('poDate').value || today();
-  const openTime = document.getElementById('poOpenAt').value || new Date().toTimeString().slice(0,5);
-  const closeTime = document.getElementById('poCutoffAt').value || '';
-  const openDateTime = new Date(`${poDate}T${openTime}:00+07:00`);
-  let closeDate = poDate;
-  let closeDateTime = closeTime ? new Date(`${closeDate}T${closeTime}:00+07:00`) : null;
-  const openHour = Number(openTime.slice(0, 2));
-  const closeHour = Number(closeTime.slice(0, 2));
-  if (closeDateTime && closeDateTime <= openDateTime && openHour >= 18 && closeHour <= 6) {
-    closeDate = addIsoDateDays(poDate, 1);
-    closeDateTime = new Date(`${closeDate}T${closeTime}:00+07:00`);
-  }
-  const openAt = openDateTime.toISOString();
-  const cutoffAt = closeDateTime ? closeDateTime.toISOString() : null;
+    .filter(item => item.ingredientId && item.maxQuantity > 0);
+  const poDate = today();
+  const openAt = new Date().toISOString();
+  const closeTime = document.getElementById('poCutoffAt').value || '17:50';
+  const closeDateTime = new Date(`${poDate}T${closeTime}:00+07:00`);
+  const cutoffAt = closeDateTime.toISOString();
   const payload = {
-    name: document.getElementById('poName').value.trim(),
+    name: 'PO Hari Ini',
     deliveryDate: poDate,
     openAt,
     cutoffAt,
-    maxTotalCups: Number(document.getElementById('poMaxCups').value) || null,
-    qrisTimeoutMinutes: Number(document.getElementById('poQrisTimeout').value) || 30,
+    maxTotalCups,
+    qrisTimeoutMinutes: 30,
     ingredientLimits,
   };
-  if (!payload.name) return showToast('Nama PO wajib diisi', 'error');
-  if (!payload.cutoffAt || new Date(payload.cutoffAt) <= new Date(payload.openAt)) return showToast('Jam tutup harus setelah jam buka', 'error');
-  const scheduled = new Date(payload.openAt) > new Date();
-  const ok = await runV2Mutation('Menyimpan PO...', () => window.kopsusrenServices.createPo(payload), scheduled ? 'PO berhasil dijadwalkan' : 'PO berhasil dibuka');
+  if (new Date(payload.cutoffAt) <= new Date(payload.openAt)) return showToast('Jam tutup hari ini sudah lewat. Pilih jam yang lebih malam.', 'error');
+  const draftId = document.getElementById('poDraftId').value;
+  const ok = await runV2Mutation('Membuka PO...', () => draftId
+    ? window.kopsusrenServices.openPoNow(draftId, payload.cutoffAt, payload.maxTotalCups, ingredientLimits)
+    : window.kopsusrenServices.createPo(payload), 'PO berhasil dibuka');
   if (ok) {
-    document.getElementById('poName').value = '';
-    document.getElementById('poOpenAt').value = '';
-    document.getElementById('poCutoffAt').value = '';
-    document.querySelectorAll('.po-allocation-input').forEach(input => { input.value = ''; });
-    document.querySelector('.po-create-panel').open = false;
+    document.getElementById('poCutoffAt').value = '17:50';
+    document.getElementById('poMilkLimit').value = '';
+    document.getElementById('poMatchaLimit').value = '';
+    closeModal('modalBukaPo');
   }
 }
 
@@ -1521,16 +1557,79 @@ function renderApprovalInbox() {
     <p style="margin-top:8px;color:var(--abu2)">Heartbeat terakhir: ${last.toLocaleString('id-ID')}</p>`;
 }
 
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
+let modalReturnFocus = null;
+
+function openModal(id) {
+  const backdrop = document.getElementById(id);
+  if (!backdrop) return;
+  modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  backdrop.classList.add('open');
+  backdrop.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+  requestAnimationFrame(() => backdrop.querySelector('.modal-close')?.focus());
 }
+
+function closeModal(id) {
+  const backdrop = document.getElementById(id);
+  if (!backdrop) return;
+  backdrop.classList.remove('open');
+  backdrop.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+  modalReturnFocus?.focus?.();
+  modalReturnFocus = null;
+}
+
+function closeModalFromBackdrop(event) {
+  if (event.target === event.currentTarget) closeModal(event.currentTarget.id);
+}
+
+function getFocusableElements(container) {
+  return [...container.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])')]
+    .filter(element => !element.hidden && element.getClientRects().length);
+}
+
+document.addEventListener('keydown', event => {
+  const openModalBackdrop = document.querySelector('.modal-backdrop.open');
+  if (event.key === 'Escape') {
+    if (openModalBackdrop) {
+      event.preventDefault();
+      closeModal(openModalBackdrop.id);
+      return;
+    }
+    if (document.getElementById('navDrawer').classList.contains('open')) {
+      event.preventDefault();
+      toggleNav(false);
+    }
+    return;
+  }
+  if (event.key !== 'Tab' || !openModalBackdrop) return;
+  const modal = openModalBackdrop.querySelector('.modal');
+  const focusable = getFocusableElements(modal);
+  if (!focusable.length) {
+    event.preventDefault();
+    modal.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
 
 function switchTab(tabId) {
   ['belanjaBahan','pemasukanLain','pengeluaranLain'].forEach(t=>{
     document.getElementById('tab-'+t).style.display = t===tabId?'block':'none';
   });
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
-    b.classList.toggle('active', ['belanjaBahan','pemasukanLain','pengeluaranLain'][i]===tabId);
+    const active = ['belanjaBahan','pemasukanLain','pengeluaranLain'][i]===tabId;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', String(active));
+    b.setAttribute('tabindex', active ? '0' : '-1');
   });
 }
 
@@ -1567,7 +1666,6 @@ function renderDashboard() {
   const lowBahan = state.bahan.filter(b=>b.stok < b.threshold && b.id!=='gas');
   alertP.innerHTML = lowBahan.map(b=>`
     <div class="alert danger">
-      <span class="alert-icon">⚠️</span>
       <div><strong>${safeText(b.nama)}</strong> menipis! Stok: ${Number(b.stok)} ${safeText(b.satuan)} (min: ${Number(b.threshold)} ${safeText(b.satuan)})</div>
     </div>`).join('');
 
@@ -1585,7 +1683,7 @@ function renderDashboard() {
       <div><span style="font-size:12px;color:var(--abu2)">#${i+1}</span> <strong>${safeText(c.nama)}</strong></div>
       <div style="text-align:right"><span class="badge badge-hijau">${c.jumlah}x</span><br><span style="font-size:11px;color:var(--abu2)">${rp(c.total)}</span></div>
     </div>`).join('') :
-    '<div style="color:var(--abu2);font-size:13px;">Belum ada data penjualan.</div>';
+    '<div class="empty-state"><strong>Belum ada pelanggan teratas</strong><span>Catat penjualan untuk mulai melihat pelanggan yang paling sering membeli.</span></div>';
 
   // Stok summary
   document.getElementById('stokSummary').innerHTML = state.bahan.slice(0,6).map(b=>{
@@ -1657,7 +1755,8 @@ function renderRiwayat() {
 
   const container = document.getElementById('riwayatList');
   if(!data.length) {
-    container.innerHTML='<div class="card" style="color:var(--abu2);text-align:center;padding:20px;">Tidak ada data.</div>';
+    const filtered = Boolean(filterTgl || filterCust);
+    container.innerHTML=`<div class="card empty-state"><strong>${filtered ? 'Tidak ada transaksi yang cocok' : 'Belum ada riwayat penjualan'}</strong><span>${filtered ? 'Ubah tanggal atau kata pencarian untuk melihat transaksi lain.' : 'Catat penjualan dari PO & Orders agar riwayat muncul di sini.'}</span></div>`;
     return;
   }
 
@@ -1672,7 +1771,7 @@ function renderRiwayat() {
     <div class="card">
       <div class="card-title">${formatDate(tgl)}</div>
       ${items.map(p=>`
-        <div class="jual-item" onclick="showDetail('${p.id}')" style="cursor:pointer">
+        <button type="button" class="jual-item interactive-card" onclick="showDetail('${p.id}')">
           <div class="jual-item-head">
             <div>
               <div class="jual-customer">${safeText(p.customer)}${p.kelas?' ('+safeText(p.kelas)+')':''}</div>
@@ -1680,7 +1779,7 @@ function renderRiwayat() {
             </div>
             <div class="jual-harga">${rp(p.totalHarga)}</div>
           </div>
-        </div>`).join('')}
+        </button>`).join('')}
       <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid var(--krem2);margin-top:4px;font-size:13px;">
         <span>${items.length} transaksi</span>
         <span class="highlight">${rp(items.reduce((s,p)=>s+p.totalHarga,0))}</span>
@@ -1707,8 +1806,8 @@ function showDetail(id) {
       <div style="display:flex;justify-content:space-between"><span>Metode Bayar</span><span>${safeText(p.bayar)}</span></div>
       ${p.keterangan?`<div style="display:flex;justify-content:space-between"><span>Keterangan</span><span>${safeText(p.keterangan)}</span></div>`:''}
     </div>`;
-  document.getElementById('deleteSaleBtn').textContent = state.isV2 ? 'Batalkan & refund' : '🗑️ Hapus transaksi';
-  document.getElementById('modalDetail').classList.add('open');
+  document.getElementById('deleteSaleBtn').textContent = state.isV2 ? 'Batalkan & refund' : 'Hapus transaksi';
+  openModal('modalDetail');
 }
 
 async function hapusPenjualan() {
@@ -1778,9 +1877,9 @@ function hitungKalkulator() {
 
   const totalUntung = totalOmzet - totalModal;
 
-  let html = '<div class="card"><div class="card-title">📦 Kebutuhan Bahan</div>';
+  let html = '<div class="card"><div class="card-title">Kebutuhan Bahan</div>';
   if(Object.keys(kebutuhan).length===0) {
-    html += '<div style="color:var(--abu2);font-size:13px;">Masukkan jumlah cup terlebih dahulu.</div></div>';
+    html += '<div class="empty-state"><strong>Belum ada jumlah produksi</strong><span>Isi jumlah cup pada minimal satu menu, lalu hitung kembali.</span></div></div>';
     document.getElementById('kalcResult').innerHTML = html;
     return;
   }
@@ -1791,13 +1890,13 @@ function hitungKalkulator() {
     const cukup = b.stok >= jml;
     html += `<div class="kalc-bahan-item">
       <span class="kalc-label">${safeText(b.nama)}</span>
-      <span class="kalc-val ${cukup?'cukup':'kurang'}">${jml} ${safeText(b.satuan)} ${cukup?'✓':'⚠️ kurang (stok:'+Number(b.stok)+')'}</span>
+      <span class="kalc-val ${cukup?'cukup':'kurang'}">${jml} ${safeText(b.satuan)} ${cukup?'cukup':'kurang, stok '+Number(b.stok)}</span>
     </div>`;
   }
   html += '</div>';
 
   html += `<div class="card">
-    <div class="card-title">💰 Ringkasan Finansial</div>
+    <div class="card-title">Ringkasan Finansial</div>
     <div class="kalc-bahan-item"><span class="kalc-label">Total Omzet</span><span class="kalc-val cukup">${rp(totalOmzet)}</span></div>
     <div class="kalc-bahan-item"><span class="kalc-label">Total Modal</span><span class="kalc-val">${rp(totalModal)}</span></div>
     <div class="kalc-bahan-item"><span class="kalc-label">Estimasi Untung</span><span class="kalc-val cukup">${rp(totalUntung)}</span></div>
@@ -1813,7 +1912,7 @@ function renderStok() {
   container.innerHTML = state.bahan.map(b=>{
     const pct = Math.min(100, b.stok / (b.threshold*3) * 100);
     const cls = pct>50?'bar-hijau':pct>25?'bar-kuning':'bar-merah';
-    const status = b.stok < b.threshold ? '<span class="badge badge-merah">⚠️ Menipis</span>' : '<span class="badge badge-hijau">✓ Aman</span>';
+    const status = b.stok < b.threshold ? '<span class="badge badge-merah">Menipis</span>' : '<span class="badge badge-hijau">Aman</span>';
 
     // Info harga: tampilkan kemasan jika tersimpan
     let hargaInfo;
@@ -1828,7 +1927,7 @@ function renderStok() {
       hargaInfo = `HPP: ${rpDec(b.hargaBeli)}/${b.satuan}`;
     }
 
-    return `<div class="card" onclick="editBahan('${b.id}')" style="cursor:pointer">
+    return `<button type="button" class="card interactive-card" onclick="editBahan('${b.id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-weight:600;font-size:14px">${safeText(b.nama)}</div>
@@ -1844,7 +1943,7 @@ function renderStok() {
         </div>
         <div class="stok-bar-bg"><div class="stok-bar-fill ${cls}" style="width:${pct}%"></div></div>
       </div>
-    </div>`;
+    </button>`;
   }).join('');
 
   // Restock panel
@@ -1852,8 +1951,8 @@ function renderStok() {
   const restockPanel = document.getElementById('restockPanel');
   if(lowBahan.length) {
     restockPanel.innerHTML = `<div class="card">
-      <div class="card-title">🔔 Rekomendasi Restock</div>
-      <button class="btn btn-outline btn-sm" onclick="generateRestock()">📋 Buat Notifikasi Restock</button>
+      <div class="card-title">Rekomendasi Restock</div>
+      <button class="btn btn-outline btn-sm" onclick="generateRestock()">Buat Notifikasi Restock</button>
       <div id="restockText"></div>
     </div>`;
   } else {
@@ -1868,7 +1967,7 @@ function generateRestock() {
   const text = lowBahan.map(b=>{
     const kurang = b.threshold - b.stok;
     const cost = Math.round(kurang * b.hargaBeli);
-    return `⚠️ Stok ${b.nama} tinggal ${b.stok} ${b.satuan}\n   → Beli minimal ${kurang} ${b.satuan} ≈ ${rp(cost)}`;
+    return `Stok ${b.nama} tinggal ${b.stok} ${b.satuan}\nBeli minimal ${kurang} ${b.satuan}, sekitar ${rp(cost)}`;
   }).join('\n\n');
 
   const el = document.getElementById('restockText');
@@ -1896,7 +1995,7 @@ function updateHargaPreview() {
   const satuan = document.getElementById('editBahanSatuan').value;
   const hpp = isi > 0 ? harga / isi : 0;
   document.getElementById('hargaPerSatuanPreview').innerHTML =
-    `📌 Harga per ${satuan}: <strong>Rp ${hpp.toFixed(2)}</strong> (dari ${harga} / ${isi} ${satuan})`;
+    `Harga per ${satuan}: <strong>Rp ${hpp.toFixed(2)}</strong> (dari ${harga} / ${isi} ${satuan})`;
 }
 
 function editBahan(id) {
@@ -1923,7 +2022,7 @@ function editBahan(id) {
   document.getElementById('editBahanHargaKemasan').oninput = updateHargaPreview;
   document.getElementById('editBahanIsiKemasan').oninput = updateHargaPreview;
 
-  document.getElementById('modalBahan').classList.add('open');
+  openModal('modalBahan');
 }
 
 async function simpanEditBahan() {
@@ -1973,14 +2072,14 @@ async function simpanEditBahan() {
   closeModal('modalBahan');
   renderStok();
   renderDashboard();
-  showToast(`✅ ${b.nama} berhasil diupdate | Harga: Rp${b.hargaBeli.toFixed(2)}/${b.satuan}`);
+  showToast(`${b.nama} berhasil diperbarui. Harga: Rp${b.hargaBeli.toFixed(2)}/${b.satuan}`);
 }
 
 // ============= RESEP =============
 function renderResep() {
   const container = document.getElementById('resepList');
   container.innerHTML = state.menu.map(m=>`
-    <div class="card" onclick="editResep('${m.id}')" style="cursor:pointer">
+    <button type="button" class="card interactive-card" onclick="editResep('${m.id}')">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:16px;font-family:'DM Serif Display',serif">${safeText(m.nama)}</div>
         <div>
@@ -1999,7 +2098,7 @@ function renderResep() {
         <span class="highlight">Untung/cup: ${rp(m.harga - hitungModalMenu(m))}</span>
         <span style="color:var(--abu2);margin-left:8px">Margin: ${Math.round((m.harga-hitungModalMenu(m))/m.harga*100)}%</span>
       </div>
-    </div>`).join('');
+    </button>`).join('');
 }
 
 function editResep(id) {
@@ -2020,7 +2119,7 @@ function editResep(id) {
     </div>`;
   }).join('');
 
-  document.getElementById('modalResep').classList.add('open');
+  openModal('modalResep');
 }
 
 async function simpanEditResep() {
@@ -2063,7 +2162,7 @@ function renderCashOverview() {
   document.getElementById('mutasiCount').textContent = state.mutasiKas.length + ' transaksi';
 
   if(!mutasi.length) {
-    container.innerHTML='<div style="color:var(--abu2);font-size:13px;">Belum ada mutasi kas.</div>';
+    container.innerHTML='<div class="empty-state"><strong>Belum ada mutasi kas</strong><span>Catat belanja, pemasukan, atau pengeluaran untuk mengisi riwayat kas.</span></div>';
     return;
   }
 
@@ -2098,7 +2197,7 @@ function renderPengeluaran() {
   const items = state.pengeluaranList.slice().reverse().slice(0, 30);
   const container = document.getElementById('pengeluaranList');
   if (!items.length) {
-    container.innerHTML = '<div style="color:var(--abu2);font-size:13px;">Belum ada catatan.</div>';
+    container.innerHTML = '<div class="empty-state"><strong>Belum ada catatan transaksi</strong><span>Gunakan salah satu form di atas untuk mencatat transaksi pertama.</span></div>';
   } else {
     container.innerHTML = items.map(i => `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--krem2)">
@@ -2171,7 +2270,7 @@ async function simpanBelanjaB() {
     return;
   }
 
-  // 🔥 RATA-RATA TERTIMBANG (WEIGHTED AVERAGE)
+  // Perbarui HPP dengan rata-rata tertimbang dari stok lama dan pembelian baru.
   const nilaiStokLama = b.stok * b.hargaBeli;
   const stokBaru = b.stok + jumlah;
   const nilaiStokBaru = nilaiStokLama + totalHarga;
@@ -2220,7 +2319,7 @@ async function simpanBelanjaB() {
   renderStok();
   renderDashboard();
 
-  showToast(`✅ ${b.nama}: stok +${jumlah} ${b.satuan}, HPP baru: Rp${b.hargaBeli.toFixed(2)}/${b.satuan}`);
+  showToast(`${b.nama}: stok bertambah ${jumlah} ${b.satuan}, HPP baru Rp${b.hargaBeli.toFixed(2)}/${b.satuan}`);
 }
 
 function updatePreviewHarga() {
@@ -2320,7 +2419,7 @@ function renderLaporan() {
   document.getElementById('laporanTanggal').value = today2;
   const container = document.getElementById('laporanSavedList');
   if(!state.laporanList||!state.laporanList.length) {
-    container.innerHTML='<div style="color:var(--abu2);font-size:13px;">Belum ada laporan tersimpan.</div>';
+    container.innerHTML='<div class="empty-state"><strong>Belum ada laporan tersimpan</strong><span>Pilih tanggal, lalu generate laporan untuk menyimpannya di sini.</span></div>';
     return;
   }
   container.innerHTML = state.laporanList.slice().reverse().map(l=>`
@@ -2329,7 +2428,7 @@ function renderLaporan() {
         <div style="font-size:13px;font-weight:600">${l.fileName}</div>
         <div style="font-size:11px;color:var(--abu2)">${l.folder} · ${rp(l.omzet)} omzet</div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="downloadLaporan('${l.id}')">⬇️</button>
+      <button class="btn btn-outline btn-sm" onclick="downloadLaporan('${l.id}')" aria-label="Unduh ${safeText(l.fileName)}">Unduh</button>
     </div>`).join('');
 }
 
@@ -2401,7 +2500,7 @@ tr:hover td{background:#F5F0E8}
 footer{margin-top:30px;padding-top:10px;border-top:1px solid #D0C4B0;color:#888;font-size:12px}
 @media print{.no-print{display:none}}
 </style></head><body>
-<h1>☕ Laporan Harian</h1>
+<h1>Laporan Harian</h1>
 <p><strong>Tanggal:</strong> ${hariNama}, ${tglAngka} ${bulanNama} ${tahun}</p>
 <p><strong>Folder:</strong> ${folderName}</p>
 <p><strong>File:</strong> ${fileName}</p>
@@ -2412,7 +2511,7 @@ footer{margin-top:30px;padding-top:10px;border-top:1px solid #D0C4B0;color:#888;
 <div class="sum-item"><div class="sum-label">Keuntungan</div><div class="sum-val hijau">${rp(untung)}</div></div>
 </div>
 
-<h2>📋 Daftar Penjualan</h2>
+<h2>Daftar Penjualan</h2>
 <table>
 <thead><tr><th>No</th><th>Customer</th><th>Kelas</th><th>Menu</th><th>Harga</th><th>Metode</th><th>Ket</th></tr></thead>
 <tbody>
@@ -2423,14 +2522,14 @@ ${penjHari.map((p,i)=>`<tr>
 <tr class="total-row"><td colspan="4">TOTAL (${penjHari.length} transaksi)</td><td>${rp(omzet)}</td><td colspan="2"></td></tr>
 </tbody></table>
 
-<h2>📊 Ringkasan Per Menu</h2>
+<h2>Ringkasan Per Menu</h2>
 <table>
 <thead><tr><th>Menu</th><th>Jumlah Cup</th><th>Total Omzet</th></tr></thead>
 <tbody>
 ${Object.values(perMenu).filter(m=>m.cup>0).map(m=>`<tr><td>${safeText(m.nama)}</td><td>${m.cup} cup</td><td>${rp(m.omzet)}</td></tr>`).join('')}
 </tbody></table>
 
-<h2>🧪 Bahan Terpakai</h2>
+<h2>Bahan Terpakai</h2>
 <table>
 <thead><tr><th>Bahan</th><th>Terpakai</th><th>Stok Akhir</th></tr></thead>
 <tbody>
@@ -2441,7 +2540,7 @@ ${Object.entries(bahanTerpakai).map(([bid,jml])=>{
 }).join('')}
 </tbody></table>
 
-<h2>💰 Informasi Kas</h2>
+<h2>Informasi Kas</h2>
 <table>
 <thead><tr><th>Item</th><th>Nilai</th></tr></thead>
 <tbody>
@@ -2449,13 +2548,13 @@ ${Object.entries(bahanTerpakai).map(([bid,jml])=>{
 ${totalTips>0?`<tr><td>Total Tips</td><td>${rp(totalTips)}</td></tr>`:''}
 </tbody></table>
 
-<h2>📦 Stok Akhir Semua Bahan</h2>
+<h2>Stok Akhir Semua Bahan</h2>
 <table>
 <thead><tr><th>Bahan</th><th>Stok Akhir</th><th>Satuan</th><th>Status</th></tr></thead>
 <tbody>
 ${state.bahan.map(b=>`<tr>
 <td>${safeText(b.nama)}</td><td>${Number(b.stok)}</td><td>${safeText(b.satuan)}</td>
-<td>${b.stok<b.threshold?'⚠️ Menipis':'✓ Aman'}</td>
+<td>${b.stok<b.threshold?'Menipis':'Aman'}</td>
 </tr>`).join('')}
 </tbody></table>
 
@@ -2550,7 +2649,7 @@ async function restoreV2Settings(data) {
   if (!ingredients.length&&!products.length&&!Number.isFinite(cashBalance)) throw new Error('JSON bukan backup Baristack App yang dikenali');
   if (!confirm('Pulihkan stok, threshold, harga, resep, dan saldo kas dari JSON ini? Riwayat transaksi tidak akan dihapus atau ditimpa.')) return false;
   const ok=await runV2Mutation('Memulihkan setting...',()=>window.kopsusrenServices.importSettings({ingredients,products,cashBalance:Number.isFinite(cashBalance)?cashBalance:null}),'Setting dari JSON berhasil dipulihkan');
-  if (ok) setImportLog('importJsonLog',`✅ ${ingredients.length} bahan dan ${products.length} menu dipulihkan.`);
+  if (ok) setImportLog('importJsonLog',`${ingredients.length} bahan dan ${products.length} menu dipulihkan.`);
   return ok;
 }
 
@@ -2569,7 +2668,7 @@ async function importData(event) {
       showToast('Data berhasil di-import!');
     }
   } catch(err) {
-    setImportLog('importJsonLog',`❌ ${err.message||'File tidak valid'}`,true);
+    setImportLog('importJsonLog',err.message||'File tidak valid',true);
     showToast(err.message||'File tidak valid!','error');
   } finally { event.target.value=''; }
 }
@@ -2694,18 +2793,15 @@ function initSwipe() {
 
     if (dt < 300 && absDx > 40 && absDx > dy) {
       const drawer = document.getElementById('navDrawer');
-      const overlay = document.getElementById('navOverlay');
 
       // Swipe kanan buka
       if (dx > 40 && !drawer.classList.contains('open')) {
-        drawer.classList.add('open');
-        overlay.classList.add('open');
+        toggleNav(true);
         e.preventDefault();
       }
       // Swipe kiri tutup
       else if (dx < -40 && drawer.classList.contains('open')) {
-        drawer.classList.remove('open');
-        overlay.classList.remove('open');
+        toggleNav(false);
         e.preventDefault();
       }
     }
@@ -2714,7 +2810,10 @@ function initSwipe() {
 
 // ============= AUTH =============
 async function initApp() {
-  document.getElementById('loginScreen').style.display = 'none';
+  const loginScreen = document.getElementById('loginScreen');
+  loginScreen.hidden = true;
+  loginScreen.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('auth-locked');
   await loadState();
   recalcSyrupHPP();
   saveState();
@@ -2722,6 +2821,15 @@ async function initApp() {
   renderDashboard();
   renderPo();
   initSwipe();
+  if (!window.baristackRefreshTimer) {
+    window.baristackRefreshTimer = setInterval(async () => {
+      if (document.hidden || !getToken()) return;
+      try {
+        await refreshV2();
+        renderPage(activePage);
+      } catch { /* koneksi berikutnya akan mencoba lagi */ }
+    }, 20000);
+  }
 }
 
 async function doLogin() {
@@ -2757,14 +2865,14 @@ async function doLogin() {
       errEl.textContent = data.error || 'Login gagal. Coba lagi.';
       errEl.style.display = 'block';
       btn.disabled = false;
-      btn.textContent = '☕ Masuk';
+      btn.textContent = 'Masuk';
     }
   } catch {
     hideLoading();
     errEl.textContent = 'Koneksi gagal. Periksa jaringan dan coba lagi.';
     errEl.style.display = 'block';
     btn.disabled = false;
-    btn.textContent = '☕ Masuk';
+    btn.textContent = 'Masuk';
   }
 }
 

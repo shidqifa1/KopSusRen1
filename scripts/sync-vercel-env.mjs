@@ -17,6 +17,7 @@ if (process.env.GROQ_MODEL) keys.push('GROQ_MODEL');
 if (process.env.WA_OWNER_NUMBERS) keys.push('WA_OWNER_NUMBERS');
 if (process.env.QRIS_IMAGE_URL) keys.push('QRIS_IMAGE_URL');
 if (process.env.CHATBOT_V2_ENABLED) keys.push('CHATBOT_V2_ENABLED');
+if (process.env.CHATBOT_MODE) keys.push('CHATBOT_MODE');
 
 for (const key of keys) {
   const value = process.env[key];

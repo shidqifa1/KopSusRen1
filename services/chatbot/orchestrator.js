@@ -1,11 +1,26 @@
 import { sql } from '../../db/index.js';
+import { createHash,randomUUID } from 'node:crypto';
 import { applyMessage, emptyOrder } from '../parser/orderParser.js';
 import { groqEnabled, parseWithGroq } from '../parser/groqOrderParser.js';
 import {
-  applyStructuredPatch, deterministicCustomerTurn, draftItemsForRpc, emptyDraft, groundedRecommendation, menuText, missingFields,
-  nextReply, summarizeDraft,
+  SAFETY_CLASSIFICATION, applyParserAmbiguities, applyStructuredPatch, authorizeOrderCommit, classifyDraftSafety, deterministicCustomerTurn, draftItemsForRpc, emptyDraft,
+  groundedRecommendation, isExplicitOrderConfirmation, menuText, mentionsSupportedPaymentMethod, missingFields, nextReply, sanitizeCustomerParsedResult, summarizeDraft,
 } from './conversation.js';
 import { extractOwnerPoFields, jakartaTime, validateOwnerPoSchedule } from './ownerPo.js';
+import { decideParsedResultApplicability,runInboundPipeline } from './transactionFlow.js';
+import { buildShadowObservation } from './shadow.js';
+import { handleOwnerTurn,prepareOwnerTurn } from '../owner/pipeline.js';
+
+const PROCESSING_LEASE_SECONDS=60;
+
+function chatbotMode() {
+  return String(process.env.CHATBOT_MODE||'confirmation').trim().toLowerCase()==='shadow'?'shadow':'confirmation';
+}
+
+function shadowCustomerRef(phone) {
+  const salt=process.env.SHADOW_HASH_SALT||process.env.AUTH_SECRET||process.env.WA_SHARED_SECRET||'baristack-shadow';
+  return createHash('sha256').update(`${salt}:${normalizePhone(phone)}`).digest('hex').slice(0,32);
+}
 
 function normalizePhone(value) {
   return String(value || '').replace(/\D/g,'').replace(/^0/,'62');
@@ -126,11 +141,11 @@ function localFallback(text,previous,products) {
     }).filter(item=>item.productId)};
   draft.pending_question=missingFields(draft)[0]||null;
   draft.last_product_id=draft.items.at(-1)?.productId||null;
-  return { draft,readyToCommit:result.readyToCommit,intent:result.intent,confidence:result.confidence };
+  return { draft,readyToCommit:false,intent:result.intent,confidence:result.confidence };
 }
 
 function mentionsPaymentMethod(text) {
-  return /\b(?:cash|cas|tunai|qris|qr|keris)\b/i.test(String(text||''));
+  return mentionsSupportedPaymentMethod(text);
 }
 
 function mentionsUnsupportedPayment(text) {
@@ -161,6 +176,23 @@ function draftStatusReply(draft,products) {
     return `Pesanan ${cups} cup tadi masih tersimpan sebagai draft, belum hilang:\n${summary}\n\nBelum masuk antrean karena pembayaran belum dipilih. Untuk sekarang pilihannya cash.`;
   }
   return `Pesanan tadi masih tersimpan sebagai draft, belum masuk antrean:\n${draftReply(draft,products)}`;
+}
+
+function manualHandoffResult({phone,draft,products,issues,notifyOwner=true}) {
+  const summary=summarizeDraft(draft,products).text||'Belum ada item yang berhasil dipastikan.';
+  return {
+    replyText:'Maaf, aku belum bisa memastikan pesananmu dengan aman. Pesanan ini perlu dibantu manual oleh owner ya.',
+    ownerNotifications:notifyOwner?ownerPhones().map(owner=>({
+      phone:owner,
+      text:[
+        'Perlu bantuan manual untuk percakapan customer.',
+        `Nomor: ${phone}`,
+        `Alasan: ${(issues||[]).join('; ')||'Interpretasi belum dapat dipastikan'}`,
+        'Draft saat ini:',
+        summary,
+      ].join('\n'),
+    })):[],
+  };
 }
 
 async function customerImage(db,{phone,messageId}) {
@@ -219,36 +251,66 @@ async function resendPendingQris(db,phone) {
   };
 }
 
-async function handleCustomer(db,payload,messageId,history=[]) {
+function stateVersion(value) {
+  if (!value) return null;
+  const date=value instanceof Date?value:new Date(value);
+  return Number.isFinite(date.getTime())?date.toISOString():String(value);
+}
+
+async function loadParseSnapshot(db,phone,excludeMessageId=null) {
+  const stateRows=await db`select order_state,updated_at from conversation_order_states
+    where channel='whatsapp' and customer_phone=${phone} limit 1`;
+  const state=stateRows[0]?.order_state||{};
+  const sessionStartedAt=state?._conversation_started_at||null;
+  const historyRows=sessionStartedAt?await db`select direction,body from chat_messages
+    where customer_phone=${phone} and created_at>=${sessionStartedAt}::timestamptz
+      and (${excludeMessageId}::uuid is null or id<>${excludeMessageId}::uuid)
+    order by created_at desc,case when direction='OUTBOUND' then 0 else 1 end limit 20`:[];
+  return {
+    orderState:state,
+    stateVersion:stateVersion(stateRows[0]?.updated_at),
+    history:historyRows.reverse().map(row=>({role:row.direction==='OUTBOUND'?'assistant':'user',content:row.body})),
+  };
+}
+
+async function prepareChatTurn(payload,registration) {
+  const phone=normalizePhone(payload.phone);
+  const snapshot=await loadParseSnapshot(sql,phone,registration?.messageId||null);
+  const text=String(payload.text||'').trim();
+  if (isOwnerPhone(phone)) {
+    return {...snapshot,...await prepareOwnerTurn({payload,snapshot,db:sql}),previousDraft:snapshot.orderState,role:'OWNER'};
+  }
+  const context=await loadBusinessContext(sql);
+  if (payload.hasImage) return {...snapshot,parsed:null,parsedByAi:false,parserLatencyMs:0,products:context.products,previousDraft:snapshot.orderState,role:'CUSTOMER'};
+
+  const saved=snapshot.orderState||{};
+  const previous=saved.po_session_id&&saved.po_session_id!==context.po?.id
+    ? emptyDraft(context.po?.id||null)
+    : {...emptyDraft(context.po?.id||null),...saved,po_session_id:context.po?.id||null,items:Array.isArray(saved.items)?saved.items:[]};
+  const parserStarted=performance.now();
+  let parsed=deterministicCustomerTurn(text,previous,context.products);
+  if (!parsed&&groqEnabled()) {
+    try { parsed=await parseWithGroq({text,currentOrder:previous,menu:context.products,role:'CUSTOMER',pendingQuestion:previous.pending_question,history:snapshot.history}); }
+    catch(error) { console.warn('chat_ai_fallback',{phone:hashPhoneForLog(phone),error:safeError(error)}); }
+  }
+  return {...snapshot,parsed,parsedByAi:Boolean(parsed&&!parsed._source),parserLatencyMs:performance.now()-parserStarted,products:context.products,previousDraft:previous,role:'CUSTOMER'};
+}
+
+async function handleCustomer(db,payload,messageId,prepared) {
   const phone=normalizePhone(payload.phone);
   if (payload.hasImage) return customerImage(db,{phone,messageId:payload.waMessageId||messageId});
   const {po,products,availability}=await loadBusinessContext(db);
   let previous=await loadConversation(db,phone,po?.id||null);
   const text=String(payload.text||'').trim();
 
-  let parsed=null;
-  let fallback=null;
+  let parsed=prepared?.parsed||null;
   let qrisUnavailable=false;
-  parsed=deterministicCustomerTurn(text,previous,products);
-  if (!parsed&&groqEnabled()) {
-    try { parsed=await parseWithGroq({text,currentOrder:previous,menu:products,role:'CUSTOMER',pendingQuestion:previous.pending_question,history}); }
-    catch(error) { console.warn('chat_ai_fallback',{phone:hashPhoneForLog(phone),error:safeError(error)}); }
-  }
-  console.info('customer_ai_intents',{phone:hashPhoneForLog(phone),source:parsed?(parsed._source||'GROQ'):'FALLBACK',model:parsed?._model||null,intents:parsed?.intents||[],confidence:parsed?.confidence||0});
-  // Emergency-only parser: production conversation never takes this path while
-  // Groq is healthy. It keeps ordering available during a provider outage.
-  if (!parsed) fallback=localFallback(text,previous,products);
+  const explicitConfirmation=isExplicitOrderConfirmation(text,previous);
+  console.info('customer_ai_intents',{phone:hashPhoneForLog(phone),source:parsed?(parsed._source||'GROQ'):'SAFE_FAILURE',model:parsed?._model||null,intents:parsed?.intents||[],confidence:parsed?.confidence||0});
 
-  // The model may infer a payment method from conversational history. Payment
-  // is a critical field, so only accept it when the current message actually
-  // mentions a supported method.
-  if (parsed?.entities?.payment_method&&!mentionsPaymentMethod(text)) {
-    parsed={
-      ...parsed,
-      intents:(parsed.intents||[]).filter(intent=>intent!=='SET_PAYMENT_METHOD'),
-      entities:{...parsed.entities,payment_method:null},
-    };
-  }
+  // A model-generated confirmation is advisory only. Only the latest customer
+  // message, matched by the deterministic allowlist above, can authorize commit.
+  parsed=sanitizeCustomerParsedResult(text,previous,parsed);
 
   if (parsed?.entities?.payment_method==='QRIS'&&!process.env.QRIS_IMAGE_URL) {
     parsed={...parsed,entities:{...parsed.entities,payment_method:null}};
@@ -289,17 +351,30 @@ async function handleCustomer(db,payload,messageId,history=[]) {
     return {replyText:'PO belum dibuka atau sudah ditutup ya. Nanti kalau sudah buka, aku bisa bantu pesan.'};
   }
 
-  let patchResult;
-  let readyToCommit=false;
-  let confidence=parsed?.confidence||fallback?.confidence||0.5;
-  if (fallback) {
-    previous={...fallback.draft,_draft_id:previous._draft_id};
-    patchResult={draft:previous,cancelled:fallback.intent==='cancel_order',unresolved:[],ambiguous:[]};
-    readyToCommit=fallback.readyToCommit;
-  } else {
-    patchResult=applyStructuredPatch(previous,parsed,products);
-    readyToCommit=parsed.intents.includes('CONFIRM_ORDER');
+  if (!parsed) {
+    const safety=classifyDraftSafety(previous,{parserFailed:true});
+    let failedDraft={...safety.draft,awaiting_confirmation:false,_parser_failure:true};
+    const isHandoff=safety.classification===SAFETY_CLASSIFICATION.OWNER_HANDOFF;
+    const notifyOwner=isHandoff&&!failedDraft._handoff_notified;
+    if (isHandoff) failedDraft={...failedDraft,_handoff_notified:true};
+    failedDraft=await persistConversation(db,{phone,draft:failedDraft,messageId,confidence:0,status:'collecting_information'});
+    if (isHandoff) return {
+      draftId:failedDraft._draft_id,
+      draft:failedDraft,
+      ...manualHandoffResult({phone,draft:failedDraft,products,issues:safety.issues,notifyOwner}),
+    };
+    return {
+      draftId:failedDraft._draft_id,
+      draft:failedDraft,
+      replyText:'Maaf, aku belum bisa memastikan maksud pesan itu. Coba tulis ulang menu dan jumlahnya dengan singkat ya.',
+    };
   }
+
+  let patchResult;
+  const readyToCommit=explicitConfirmation;
+  const confidence=parsed?.confidence||0.5;
+  patchResult=applyParserAmbiguities(applyStructuredPatch(previous,parsed,products),parsed);
+  patchResult.draft={...patchResult.draft,_parser_failure:false};
   let draft=patchResult.draft;
   if (patchResult.cancelled) {
     if (previous._draft_id) await db`update order_drafts set state='REJECTED',updated_at=now() where id=${previous._draft_id}`;
@@ -309,7 +384,20 @@ async function handleCustomer(db,payload,messageId,history=[]) {
     return {replyText:'Oke, draft pesanannya dibatalkan.'};
   }
 
-  draft=await persistConversation(db,{phone,draft,messageId,confidence});
+  const safety=classifyDraftSafety(draft,patchResult);
+  draft=safety.draft;
+  const isHandoff=safety.classification===SAFETY_CLASSIFICATION.OWNER_HANDOFF;
+  const notifyOwner=isHandoff&&!draft._handoff_notified;
+  if (isHandoff) draft={...draft,_handoff_notified:true};
+  draft=await persistConversation(db,{phone,draft,messageId,confidence,status:isHandoff?'collecting_information':null});
+  if (isHandoff) return {
+    draftId:draft._draft_id,
+    draft,
+    ...manualHandoffResult({phone,draft,products,issues:safety.issues,notifyOwner}),
+  };
+  if (safety.issues.length) {
+    return {draftId:draft._draft_id,draft,replyText:draftReply(draft,products,patchResult)};
+  }
   if (/\b(?:kok|kenapa|lah)\s+(?:cuma|hanya)\b/i.test(text)&&draft.items?.length) {
     const unavailable=(previous.last_unresolved||draft.last_unresolved||[])[0];
     const reason=unavailable?` “${unavailable}” sebelumnya tidak ditambahkan karena tidak ada di menu.`:'';
@@ -346,8 +434,7 @@ async function handleCustomer(db,payload,messageId,history=[]) {
     return {replyText:groundedRecommendation(text,products,availability)};
   }
   if (readyToCommit) {
-    const missing=missingFields(draft);
-    if (missing.length) return {replyText:draftReply(draft,products,patchResult)};
+    if (!authorizeOrderCommit({text,previousDraft:previous,safety})) return {replyText:draftReply(draft,products,patchResult)};
     const rpcItems=draftItemsForRpc(draft);
     const created=await db`select create_order_bundle(${draft.customer_name},${draft.class_name},${po.id},${sql.json(rpcItems)},
       ${draft.payment_method},${null},'WHATSAPP',${`wa-order:${payload.waMessageId||messageId}`},${phone}) as id`;
@@ -415,22 +502,15 @@ function quantityInDatabaseUnit(quantity,inputUnit,databaseUnit) {
   return null;
 }
 
-async function handleOwner(db,payload,history=[]) {
+async function handleOwner(db,payload,prepared) {
   const phone=normalizePhone(payload.phone);
   const text=String(payload.text||'').trim();
   const savedRows=await db`select order_state from conversation_order_states where channel='whatsapp' and customer_phone=${phone} limit 1`;
   const saved=savedRows[0]?.order_state||{};
   const context=await loadBusinessContext(db);
   const receivedAt=new Date();
-  let parsed=null;
-  let parsedByAi=false;
-  if (groqEnabled()) {
-    try {
-      parsed=await parseWithGroq({text,currentOrder:saved,menu:context.products,role:'OWNER',pendingQuestion:saved.pending_question,history});
-      parsedByAi=Boolean(parsed);
-    } catch(error) { console.warn('owner_ai_fallback',{phone:hashPhoneForLog(phone),error:safeError(error)}); }
-  }
-  if (!parsed) parsed=ownerFallback(text);
+  const parsed=prepared?.parsed||ownerFallback(text);
+  const parsedByAi=Boolean(prepared?.parsedByAi);
   const intents=parsed?.intents||[];
   console.info('owner_ai_intents',{phone:hashPhoneForLog(phone),source:parsedByAi?'GROQ':'FALLBACK',model:parsed?._model||null,intents,confidence:parsed?.confidence||0});
   if (saved.pending_owner_action && parsed?.entities?.confirmation===true) {
@@ -590,38 +670,233 @@ async function handleOwner(db,payload,history=[]) {
   return {replyText:parsed?.reply_hint||'Mau cek stok, PO, kebutuhan produksi, atau pembayaran yang belum lunas?'};
 }
 
-export async function handleChatInbound(payload) {
+async function storeOutboundReply(db,payload,messageId,replyText) {
+  if (typeof replyText!=='string'||!replyText.trim()) return;
+  await db`insert into chat_messages(provider,customer_phone,direction,body,payload,dedupe_key,delivery_status)
+    values(${payload.provider||'baileys'},${normalizePhone(payload.phone)},'OUTBOUND',${replyText.trim()},
+      ${sql.json({inReplyTo:payload.waMessageId||messageId})},${`reply:${payload.waMessageId||messageId}`},'PENDING')
+    on conflict do nothing`;
+}
+
+async function registerInboundMessage(payload) {
   const phone=normalizePhone(payload.phone);
   const text=String(payload.text||'').trim();
   const waMessageId=payload.waMessageId?String(payload.waMessageId):null;
-  if (!phone) throw new Error('Nomor pengirim tidak valid');
-  if (!text&&!payload.hasImage) throw new Error('Isi pesan wajib ada');
+  const leaseId=randomUUID();
+  const requestedMode=chatbotMode()==='shadow'&&!isOwnerPhone(phone)?'shadow':'confirmation';
   return sql.begin(async db=>{
-    await db`select pg_advisory_xact_lock(hashtextextended(${phone},0))`;
-    const rows=await db`insert into chat_messages(provider,wa_message_id,customer_phone,customer_name,body,payload)
-      values(${payload.provider||'baileys'},${waMessageId},${phone},${payload.pushName||null},${text||'[gambar]'},${sql.json({hasImage:Boolean(payload.hasImage),receivedAt:payload.receivedAt||null})})
-      on conflict(wa_message_id) do nothing returning id`;
+    let rows=await db`insert into chat_messages(provider,wa_message_id,customer_phone,customer_name,body,payload)
+      values(${payload.provider||'baileys'},${waMessageId},${phone},${payload.pushName||null},${text||'[gambar]'},
+        ${sql.json({hasImage:Boolean(payload.hasImage),receivedAt:payload.receivedAt||null,processingMode:requestedMode})}::jsonb||jsonb_build_object(
+          'processingState','PENDING','processingLeaseId',${leaseId}::text,
+          'processingLeaseExpiresAt',now()+(${PROCESSING_LEASE_SECONDS}*interval '1 second'),'processingAttempt',1))
+      on conflict(wa_message_id) do nothing returning id,created_at,payload`;
+    let recovered=false;
+    if (!rows.length&&waMessageId) {
+      rows=await db`update chat_messages set payload=(coalesce(payload,'{}'::jsonb)-'processingLeaseId'-'processingLeaseExpiresAt')||jsonb_build_object(
+          'processingState','PENDING','processingLeaseId',${leaseId}::text,
+          'processingLeaseExpiresAt',now()+(${PROCESSING_LEASE_SECONDS}*interval '1 second'),
+          'processingAttempt',coalesce((payload->>'processingAttempt')::int,0)+1,'recoveredAt',now())
+        where wa_message_id=${waMessageId} and direction='INBOUND' and payload->>'processingState'='PENDING'
+          and ((payload->>'processingLeaseExpiresAt' is null and created_at<=now()-(${PROCESSING_LEASE_SECONDS}*interval '1 second'))
+            or (payload->>'processingLeaseExpiresAt' is not null and (payload->>'processingLeaseExpiresAt')::timestamptz<=now()))
+        returning id,created_at,payload`;
+      recovered=rows.length>0;
+    }
     if (!rows.length) return {duplicate:true};
-    const stateRows=await db`select order_state from conversation_order_states
-      where channel='whatsapp' and customer_phone=${phone} limit 1`;
-    const sessionStartedAt=stateRows[0]?.order_state?._conversation_started_at||null;
-    const historyRows=sessionStartedAt?await db`select direction,body from chat_messages
-      where customer_phone=${phone} and id<>${rows[0].id} and created_at>=${sessionStartedAt}::timestamptz
-      order by created_at desc,case when direction='OUTBOUND' then 0 else 1 end limit 20`:[];
-    const history=historyRows.reverse().map(row=>({role:row.direction==='OUTBOUND'?'assistant':'user',content:row.body}));
     const recent=await db`select count(*)::int total from chat_messages
       where direction='INBOUND' and customer_phone=${phone} and created_at>now()-interval '1 minute'`;
     const limit=isOwnerPhone(phone)?60:15;
-    if (Number(recent[0]?.total||0)>limit) return {replyText:'Pesannya terlalu cepat. Tunggu sebentar lalu coba lagi ya.'};
-    const result=isOwnerPhone(phone)?await handleOwner(db,payload,history):await handleCustomer(db,payload,rows[0].id,history);
-    if (typeof result.replyText==='string'&&result.replyText.trim()) {
-      await db`insert into chat_messages(provider,customer_phone,direction,body,payload,dedupe_key,delivery_status)
-        values(${payload.provider||'baileys'},${phone},'OUTBOUND',${result.replyText.trim()},${sql.json({inReplyTo:waMessageId||rows[0].id})},${`reply:${waMessageId||rows[0].id}`},'PENDING')
-        on conflict do nothing`;
+    const processingMode=rows[0].payload?.processingMode||requestedMode;
+    if (processingMode!=='shadow'&&!recovered&&Number(recent[0]?.total||0)>limit) {
+      const replyText='Pesannya terlalu cepat. Tunggu sebentar lalu coba lagi ya.';
+      await db`update chat_messages set payload=(coalesce(payload,'{}'::jsonb)-'processingLeaseId'-'processingLeaseExpiresAt')||${sql.json({processingState:'APPLIED',rateLimited:true})}::jsonb where id=${rows[0].id}`;
+      await storeOutboundReply(db,payload,rows[0].id,replyText);
+      return {finalResult:{id:rows[0].id,replyText}};
     }
-    console.info('chat_message_processed',{messageId:waMessageId||rows[0].id,phone:hashPhoneForLog(phone),role:isOwnerPhone(phone)?'OWNER':'CUSTOMER',result:result.orderIds?'ORDER_CREATED':'REPLIED'});
-    return {id:rows[0].id,...result};
+    return {messageId:rows[0].id,messageCreatedAt:stateVersion(rows[0].created_at),leaseId,recovered,processingMode};
   });
+}
+
+async function applyPreparedTurn(payload,registration,prepared) {
+  const phone=normalizePhone(payload.phone);
+  return sql.begin(async db=>{
+    await db`select pg_advisory_xact_lock(hashtextextended(${phone},0))`;
+    const messageRows=await db`select id,created_at,payload from chat_messages where id=${registration.messageId} for update`;
+    if (!messageRows.length) return {status:'STALE',result:{duplicate:true}};
+    const processingState=messageRows[0].payload?.processingState;
+    const ownsLease=messageRows[0].payload?.processingLeaseId===registration.leaseId;
+    if (processingState!=='PENDING'||!ownsLease) return {status:'STALE',result:{duplicate:true}};
+
+    const stateRows=await db`select order_state,updated_at from conversation_order_states
+      where channel='whatsapp' and customer_phone=${phone} limit 1`;
+    const currentState=stateRows[0]?.order_state||{};
+    const applicability=decideParsedResultApplicability({
+      snapshotVersion:prepared.stateVersion,
+      currentVersion:stateVersion(stateRows[0]?.updated_at),
+      messageCreatedAt:registration.messageCreatedAt,
+      lastAppliedAt:currentState._last_applied_message_created_at,
+    });
+    if (applicability==='STALE') {
+      await db`update chat_messages set payload=(coalesce(payload,'{}'::jsonb)-'processingLeaseId'-'processingLeaseExpiresAt')||${sql.json({processingState:'STALE'})}::jsonb where id=${registration.messageId}`;
+      return {status:'STALE',result:{id:registration.messageId,superseded:true}};
+    }
+    if (applicability==='RETRY') return {status:'RETRY'};
+
+    const result=prepared.role==='OWNER'
+      ? await handleOwnerTurn(db,payload,registration.messageId,prepared)
+      : await handleCustomer(db,payload,registration.messageId,prepared);
+    const marker={
+      _last_applied_message_id:payload.waMessageId||registration.messageId,
+      _last_applied_message_created_at:registration.messageCreatedAt,
+    };
+    await db`insert into conversation_order_states(channel,customer_phone,order_state,status,last_message_at)
+      values('whatsapp',${phone},${sql.json(marker)},'draft',now())
+      on conflict(channel,customer_phone) do update set
+        order_state=conversation_order_states.order_state||excluded.order_state,
+        last_message_at=now(),updated_at=now()`;
+    await db`update chat_messages set payload=(coalesce(payload,'{}'::jsonb)-'processingLeaseId'-'processingLeaseExpiresAt')||${sql.json({processingState:'APPLIED'})}::jsonb where id=${registration.messageId}`;
+    await storeOutboundReply(db,payload,registration.messageId,result.replyText);
+    console.info('chat_message_processed',{messageId:payload.waMessageId||registration.messageId,phone:hashPhoneForLog(phone),role:prepared.role,result:result.orderIds?'ORDER_CREATED':'REPLIED'});
+    return {status:'APPLIED',result:{id:registration.messageId,...result}};
+  });
+}
+
+function newestTimestamp(...values) {
+  return values.filter(Boolean).sort((left,right)=>new Date(right).getTime()-new Date(left).getTime())[0]||null;
+}
+
+async function insertShadowObservation(db,{payload,registration,observation,customerRef,outcome}) {
+  return db`insert into chat_shadow_observations(
+      source_message_id,wa_message_id,customer_ref,source_message_created_at,normalized_input,
+      parser_intents,resolved_items,unresolved_entities,ambiguities,safety_classification,
+      clarification_reason,parser_failed,parser_latency_ms,parser_provider,parser_model,
+      would_be_safe,parser_result,processing_outcome)
+    values(${registration.messageId},${payload.waMessageId||registration.messageId},${customerRef},${registration.messageCreatedAt},
+      ${observation.normalizedInput},${sql.json(observation.parserIntents)},${sql.json(observation.resolvedItems)},
+      ${sql.json(observation.unresolvedEntities)},${sql.json(observation.ambiguities)},${observation.safetyClassification},
+      ${observation.clarificationReason},${observation.parserFailed},${observation.parserLatencyMs},
+      ${observation.parserProvider},${observation.parserModel},${observation.wouldBeSafe},
+      ${observation.parserResult?sql.json(observation.parserResult):null},${outcome})
+    on conflict do nothing returning id`;
+}
+
+async function applyShadowTurn(payload,registration,prepared) {
+  const phone=normalizePhone(payload.phone);
+  const customerRef=shadowCustomerRef(phone);
+  const observation=buildShadowObservation({text:payload.text,prepared});
+  return sql.begin(async db=>{
+    await db`select pg_advisory_xact_lock(hashtextextended(${phone},0))`;
+    const messageRows=await db`select payload from chat_messages where id=${registration.messageId} for update`;
+    if (!messageRows.length||messageRows[0].payload?.processingState!=='PENDING'||messageRows[0].payload?.processingLeaseId!==registration.leaseId) {
+      return {status:'STALE',result:{duplicate:true,shadow:true}};
+    }
+    const [stateRows,shadowRows]=await Promise.all([
+      db`select order_state,updated_at from conversation_order_states where channel='whatsapp' and customer_phone=${phone} limit 1`,
+      db`select source_message_created_at from chat_shadow_observations where customer_ref=${customerRef}
+        order by source_message_created_at desc limit 1`,
+    ]);
+    const currentState=stateRows[0]?.order_state||{};
+    const lastAppliedAt=newestTimestamp(currentState._last_applied_message_created_at,shadowRows[0]?.source_message_created_at);
+    const applicability=decideParsedResultApplicability({
+      snapshotVersion:prepared.stateVersion,
+      currentVersion:stateVersion(stateRows[0]?.updated_at),
+      messageCreatedAt:registration.messageCreatedAt,
+      lastAppliedAt,
+    });
+    if (applicability==='RETRY') return {status:'RETRY'};
+    const outcome=applicability==='STALE'?'STALE':'OBSERVED';
+    const inserted=await insertShadowObservation(db,{payload,registration,observation,customerRef,outcome});
+    if (!inserted.length) return {status:'STALE',result:{duplicate:true,shadow:true}};
+    await db`update chat_messages set payload=(coalesce(payload,'{}'::jsonb)-'processingLeaseId'-'processingLeaseExpiresAt')||
+      ${sql.json({processingState:applicability==='STALE'?'STALE':'APPLIED',shadowMode:true})}::jsonb where id=${registration.messageId}`;
+    console.info('chat_shadow_observed',{messageId:payload.waMessageId||registration.messageId,safety:observation.safetyClassification,outcome});
+    return {status:applicability==='STALE'?'STALE':'APPLIED',result:{id:registration.messageId,shadow:true,superseded:applicability==='STALE'}};
+  });
+}
+
+async function finalizeShadowContention(payload,registration,prepared) {
+  const phone=normalizePhone(payload.phone);
+  const customerRef=shadowCustomerRef(phone);
+  const observation=buildShadowObservation({text:payload.text,prepared:prepared||{}});
+  return sql.begin(async db=>{
+    await db`select pg_advisory_xact_lock(hashtextextended(${phone},0))`;
+    const rows=await db`select payload from chat_messages where id=${registration.messageId} for update`;
+    if (!rows.length||rows[0].payload?.processingState!=='PENDING'||rows[0].payload?.processingLeaseId!==registration.leaseId) return {id:registration.messageId,duplicate:true,shadow:true};
+    await insertShadowObservation(db,{payload,registration,observation,customerRef,outcome:'STALE'});
+    await db`update chat_messages set payload=(coalesce(payload,'{}'::jsonb)-'processingLeaseId'-'processingLeaseExpiresAt')||
+      ${sql.json({processingState:'STALE',shadowMode:true,contentionExhausted:true})}::jsonb where id=${registration.messageId}`;
+    return {id:registration.messageId,shadow:true,superseded:true};
+  });
+}
+
+async function finalizeContention(payload,registration) {
+  const phone=normalizePhone(payload.phone);
+  const replyText='Pesan lain masuk bersamaan. Coba kirim ulang pesan terakhir ya.';
+  return sql.begin(async db=>{
+    await db`select pg_advisory_xact_lock(hashtextextended(${phone},0))`;
+    const rows=await db`select payload from chat_messages where id=${registration.messageId} for update`;
+    if (!rows.length||rows[0].payload?.processingState!=='PENDING'||rows[0].payload?.processingLeaseId!==registration.leaseId) return {id:registration.messageId,duplicate:true};
+    const marker={
+      _last_applied_message_id:payload.waMessageId||registration.messageId,
+      _last_applied_message_created_at:registration.messageCreatedAt,
+    };
+    await db`insert into conversation_order_states(channel,customer_phone,order_state,status,last_message_at)
+      values('whatsapp',${phone},${sql.json(marker)},'draft',now())
+      on conflict(channel,customer_phone) do update set
+        order_state=conversation_order_states.order_state||excluded.order_state,
+        last_message_at=now(),updated_at=now()`;
+    await db`update chat_messages set payload=(coalesce(payload,'{}'::jsonb)-'processingLeaseId'-'processingLeaseExpiresAt')||${sql.json({processingState:'APPLIED',contentionExhausted:true})}::jsonb where id=${registration.messageId}`;
+    await storeOutboundReply(db,payload,registration.messageId,replyText);
+    return {id:registration.messageId,replyText};
+  });
+}
+
+export async function handleChatInbound(payload) {
+  const phone=normalizePhone(payload.phone);
+  const text=String(payload.text||'').trim();
+  if (!phone) throw new Error('Nomor pengirim tidak valid');
+  if (!text&&!payload.hasImage) throw new Error('Isi pesan wajib ada');
+  return runInboundPipeline({
+    payload,
+    register:registerInboundMessage,
+    prepare:prepareChatTurn,
+    apply:(currentPayload,registration,prepared)=>registration.processingMode==='shadow'
+      ?applyShadowTurn(currentPayload,registration,prepared)
+      :applyPreparedTurn(currentPayload,registration,prepared),
+    onExhausted:(currentPayload,registration,prepared)=>registration.processingMode==='shadow'
+      ?finalizeShadowContention(currentPayload,registration,prepared)
+      :finalizeContention(currentPayload,registration,prepared),
+  });
+}
+
+export async function recoverAbandonedInboundMessages(limit=3) {
+  const boundedLimit=Math.max(1,Math.min(Number(limit)||3,10));
+  const rows=await sql`select provider,wa_message_id,customer_phone,customer_name,body,payload
+    from chat_messages
+    where direction='INBOUND' and wa_message_id is not null and payload->>'processingState'='PENDING'
+      and ((payload->>'processingLeaseExpiresAt' is null and created_at<=now()-(${PROCESSING_LEASE_SECONDS}*interval '1 second'))
+        or (payload->>'processingLeaseExpiresAt' is not null and (payload->>'processingLeaseExpiresAt')::timestamptz<=now()))
+    order by created_at asc limit ${boundedLimit}`;
+  const byCustomer=new Map();
+  for (const row of rows) byCustomer.set(row.customer_phone,[...(byCustomer.get(row.customer_phone)||[]),row]);
+  const groups=await Promise.all([...byCustomer.values()].map(async customerRows=>{
+    const recovered=[];
+    for (const row of customerRows) {
+      const result=await handleChatInbound({
+        provider:row.provider,
+        waMessageId:row.wa_message_id,
+        phone:row.customer_phone,
+        pushName:row.customer_name,
+        text:row.body==='[gambar]'?'':row.body,
+        hasImage:Boolean(row.payload?.hasImage),
+        receivedAt:row.payload?.receivedAt||null,
+      });
+      recovered.push({phone:row.customer_phone,...result});
+    }
+    return recovered;
+  }));
+  return groups.flat();
 }
 
 export { normalizePhone, isOwnerPhone, mentionsPaymentMethod, mentionsUnsupportedPayment, requestedMenuLabel, draftReply, draftStatusReply };

@@ -192,6 +192,7 @@ trap 'rm -f -- "${env_tmp:-}"; unset database_url groq_api_key' EXIT
   printf 'GROQ_API_KEY=%s\n' "$groq_api_key"
   printf 'GROQ_MODEL=%s\n' "$groq_model"
   printf 'CHATBOT_V2_ENABLED=true\n'
+  printf 'CHATBOT_MODE=confirmation\n'
   printf 'QRIS_IMAGE_URL=%s\n' "$qris_image_url"
 } > "$env_tmp"
 

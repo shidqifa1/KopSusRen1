@@ -17,7 +17,11 @@ test('sales, cash, and JSON import controls are available',()=>{
 test('CSV import and export actions only appear in settings',()=>{
   assert.equal((html.match(/onclick="exportPenjualanCSV\(\)"/g)||[]).length,1);
   assert.equal((html.match(/onclick="exportKasCSV\(\)"/g)||[]).length,1);
-  assert.match(html,/id="page-pengaturan"[\s\S]*onclick="exportPenjualanCSV\(\)"[\s\S]*onclick="exportKasCSV\(\)"[\s\S]*id="settingsImportSalesButton"[\s\S]*id="settingsImportCashButton"/);
+  const settings=html.slice(html.indexOf('id="page-pengaturan"'),html.indexOf('<!-- ============== MODALS'));
+  assert.match(settings,/onclick="exportPenjualanCSV\(\)"/);
+  assert.match(settings,/onclick="exportKasCSV\(\)"/);
+  assert.match(settings,/id="settingsImportSalesButton"/);
+  assert.match(settings,/id="settingsImportCashButton"/);
   assert.doesNotMatch(html,/id="page-riwayat"[\s\S]*onclick="exportPenjualanCSV\(\)"[\s\S]*id="page-kalkulator"/);
   assert.doesNotMatch(html,/id="page-pengeluaran"[\s\S]*onclick="exportKasCSV\(\)"[\s\S]*id="page-laporan"/);
   assert.doesNotMatch(html,/id="page-laporan"[\s\S]*onclick="export(?:Penjualan|Kas)CSV\(\)"[\s\S]*id="page-pengaturan"/);

@@ -6,11 +6,11 @@ import { extractToken, verifyToken } from "../_auth.js";
 import { applyMessage, buildReplyText, emptyOrder, isOrderStartText, menuListText, parseOrderText, summarize } from "../../services/parser/orderParser.js";
 import { groqEnabled } from "../../services/parser/groqOrderParser.js";
 import { answerCustomerWithGroq, answerOwnerWithGroq } from "../../services/ai/kopsusrenAssistant.js";
-import { handleChatInbound as handleChatInboundV2 } from "../../services/chatbot/orchestrator.js";
+import { handleChatInbound as handleChatInboundV2, recoverAbandonedInboundMessages } from "../../services/chatbot/orchestrator.js";
 
 const allowedActions = new Set([
   "record_quick_sale", "record_purchase", "create_order", "cancel_order",
-  "confirm_cash_payment", "complete_order", "void_order", "create_po", "set_po_status",
+  "confirm_cash_payment", "complete_order", "void_order", "create_po", "open_po_now", "set_po_status",
   "adjust_inventory", "adjust_account", "update_ingredient", "update_product_recipe", "run_po_maintenance", "gateway_heartbeat",
   "import_sales", "import_cash", "import_settings",
   "chat_inbound", "approval_list", "approval_approve", "approval_reject",
@@ -553,7 +553,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (action) {
       case "chat_inbound": {
         const out = process.env.CHATBOT_V2_ENABLED === "false"
-          ? await handleChatInbound(payload)
+          ? { replyText: "Chatbot otomatis sedang dinonaktifkan. Pesanan perlu dibantu manual oleh owner ya." }
           : await handleChatInboundV2(payload);
         return res.status(200).json({ ok: true, ...out });
       }
@@ -619,7 +619,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const expired = await sql`select o.order_number,coalesce(o.customer_phone,c.phone) phone from orders o join customers c on c.id=o.customer_id where o.id in ${sql(maintenance.expiredOrderIds)}`;
           for (const order of expired) if (order.phone) customerNotifications.push({ phone: order.phone, text: `Order #${order.order_number} dibatalkan karena bukti QRIS belum diterima sampai batas waktu. Reservation stok sudah dilepas.` });
         }
-        return res.status(200).json({ ok: true, id: rows[0]?.provider, maintenance, ownerNotifications, customerNotifications });
+        const recoveredMessages = await recoverAbandonedInboundMessages(3);
+        for (const recovered of recoveredMessages) {
+          if (recovered.replyText) customerNotifications.push({ phone: recovered.phone, text: recovered.replyText, qrisImageUrl: recovered.qrisImageUrl });
+          ownerNotifications.push(...(recovered.ownerNotifications || []));
+          customerNotifications.push(...(recovered.customerNotifications || []));
+        }
+        return res.status(200).json({ ok: true, id: rows[0]?.provider, maintenance, recoveredMessages: recoveredMessages.length, ownerNotifications, customerNotifications });
       }
       case "cancel_order":
         rows = await sql`select cancel_order(${payload.orderId}, ${payload.reason || null}) as id`;
@@ -648,6 +654,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "set_po_status":
         rows = await sql`select set_po_status(${payload.poSessionId}, ${payload.status}) as id`;
         break;
+      case "open_po_now": {
+        const cutoffAt = new Date(payload.cutoffAt);
+        if (!uuidPattern.test(String(payload.poSessionId || ""))) throw new Error("PO tidak valid");
+        if (!Number.isFinite(cutoffAt.getTime()) || cutoffAt.getTime() <= Date.now()) throw new Error("Jam tutup harus masih di masa depan");
+        rows = await sql.begin(async db => {
+          const updated = await db`
+            update po_sessions
+            set open_at = now(), cutoff_at = ${cutoffAt.toISOString()},
+                max_total_cups = ${payload.maxTotalCups || null}, updated_at = now()
+            where id = ${payload.poSessionId} and status = 'DRAFT'
+            returning id
+          `;
+          if (updated.length !== 1) throw new Error("Draft PO tidak ditemukan atau sudah dibuka");
+          for (const limit of Array.isArray(payload.ingredientLimits) ? payload.ingredientLimits : []) {
+            if (!uuidPattern.test(String(limit.ingredientId || "")) || !(Number(limit.maxQuantity) > 0)) throw new Error("Batas bahan PO tidak valid");
+            await db`select set_po_ingredient_limit(${payload.poSessionId}, ${limit.ingredientId}, ${Number(limit.maxQuantity)}, ${Number(limit.autoCloseThreshold) || 90}) as id`;
+          }
+          await db`select set_po_status(${payload.poSessionId}, 'OPEN') as id`;
+          return updated;
+        });
+        break;
+      }
       case "adjust_inventory": {
         const ingredientId = await resolveIngredientId(payload.ingredientId);
         rows = await sql`select adjust_inventory(${ingredientId}, ${payload.quantityDelta}, ${payload.reason}) as id`;
