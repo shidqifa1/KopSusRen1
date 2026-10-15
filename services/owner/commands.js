@@ -98,6 +98,80 @@ export function ownerCommandHelp() {
   return ['Command owner:',...OWNER_READ_COMMANDS,...OWNER_WRITE_COMMANDS].join('\n');
 }
 
+export async function loadOwnerConsultationContext(db,text='') {
+  // One statement gives the consultant a consistent, bounded read snapshot.
+  // These are fixed queries; the model never supplies SQL or identifiers.
+  const rows=await db`
+    with stock as (
+      select ingredient_id,code,left(name,80) name,unit,physical_stock::float8 physical_stock,
+        reserved_stock::float8 reserved_stock,available_stock::float8 available_stock,
+        average_cost::float8 average_cost,low_stock_threshold::float8 low_stock_threshold
+      from inventory_stock order by name limit 101
+    ), active_products as (
+      select id,code,left(name,80) name,price::float8 price from products where is_active order by name limit 101
+    ), recipe_data as (
+      select r.product_id,ri.ingredient_id,ri.quantity::float8 quantity
+      from recipe_items ri join recipes r on r.id=ri.recipe_id
+      join active_products p on p.id=r.product_id order by r.product_id,ri.ingredient_id limit 1001
+    ), recent_po as (
+      select id,left(name,80) name,delivery_date,status,open_at,cutoff_at,max_total_cups,
+        get_po_summary(id) summary,
+        case when status='OPEN' then evaluate_po_availability(id,'[]'::jsonb) end availability
+      from po_sessions where status in ('OPEN','DRAFT') order by delivery_date desc,created_at desc limit 11
+    ), weekly_orders as (
+      select id,total_amount from orders where created_at>=statement_timestamp()-interval '7 days'
+        and status not in ('CANCELLED','REJECTED')
+    ), weekly_totals as (
+      select 7 period_days,statement_timestamp()-interval '7 days' period_started_at,
+        count(*)::int orders,coalesce(sum(o.total_amount),0)::float8 order_amount,
+        coalesce(sum(o.total_amount) filter(where exists(select 1 from payments p where p.order_id=o.id and p.status='PAID')),0)::float8 paid_amount
+      from weekly_orders o
+    ), ranking as (
+      select p.code,left(p.name,80) name,sum(oi.qty)::int cups,sum(oi.line_total)::float8 amount
+      from weekly_orders o join order_items oi on oi.order_id=o.id join products p on p.id=oi.product_id
+      group by p.id order by sum(oi.qty) desc,p.id limit 21
+    ), balances as (
+      select left(name,80) name,type,balance::float8 balance from account_balances order by name limit 51
+    )
+    select statement_timestamp() observed_at,
+      coalesce((select json_agg(s) from stock s),'[]') stock,
+      coalesce((select json_agg(p) from active_products p),'[]') products,
+      coalesce((select json_agg(r) from recipe_data r),'[]') recipes,
+      coalesce((select json_agg(p) from recent_po p),'[]') po_sessions,
+      (select row_to_json(w) from weekly_totals w) weekly_sales,
+      coalesce((select json_agg(r) from ranking r),'[]') weekly_menu_ranking,
+      coalesce((select json_agg(b) from balances b),'[]') accounts`;
+  if (!rows[0]?.observed_at) throw new Error('Snapshot data usaha tidak tersedia');
+  const context={...rows[0],truncated:{}};
+  for (const [key,limit] of Object.entries({stock:100,products:100,recipes:1000,po_sessions:10,weekly_menu_ranking:20,accounts:50})) {
+    context.truncated[key]=(context[key]||[]).length>limit;
+    context[key]=(context[key]||[]).slice(0,limit);
+  }
+  const target=String(text).match(/\b(\d+)\s*(?:cup|gelas)\b/i);
+  const requested=target?Number(target[1]):null;
+  const targetCups=Number.isInteger(requested)&&requested>0&&requested<=1000?requested:null;
+  context.simulation={target_cups:targetCups,basis:'Tambahan order, resep standar; tiap menu adalah skenario terpisah, bukan gabungan. Kapasitas stok belum termasuk limit PO.'};
+  const round=value=>Math.round(value*1000)/1000;
+  context.production_scenarios=context.products.map(product=>{
+    const recipe=context.recipes.filter(item=>item.product_id===product.id);
+    const ingredients=recipe.map(item=>{
+      const stock=context.stock.find(value=>value.ingredient_id===item.ingredient_id);
+      const available=stock?Math.max(0,Number(stock.available_stock)):null;
+      const required=targetCups?round(Number(item.quantity)*targetCups):null;
+      return {name:stock?.name||null,unit:stock?.unit||null,per_cup:Number(item.quantity),
+        available_for_additional:available,target_quantity:required,
+        shortage:available!==null&&required!==null?round(Math.max(0,required-available)):null,
+        cost_per_unit:stock&&Number(stock.average_cost)>0?Number(stock.average_cost):null};
+    });
+    const complete=recipe.length>0&&!context.truncated.recipes&&ingredients.every(item=>item.available_for_additional!==null&&item.per_cup>0);
+    return {code:product.code,name:product.name,price:product.price,ingredients,
+      max_additional_cups_by_stock:complete?Math.min(...ingredients.map(item=>Math.floor(item.available_for_additional/item.per_cup+1e-9))):null,
+      ingredient_cost_per_cup:complete&&ingredients.every(item=>item.cost_per_unit!==null)
+        ?Math.round(ingredients.reduce((sum,item)=>sum+item.per_cup*item.cost_per_unit,0)*100)/100:null};
+  });
+  return context;
+}
+
 export async function executeOwnerReadCommand(db,parsed) {
   if (!parsed?.ok||parsed.kind!=='READ') throw new Error('Read command tidak valid.');
   if (parsed.action==='HELP') return {command:parsed.command,type:'HELP',data:{text:ownerCommandHelp()}};

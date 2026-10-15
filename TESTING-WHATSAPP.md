@@ -37,6 +37,24 @@ Riwayat menggunakan `orders.customer_phone` persis dari nomor pengirim dan `sour
 
 ## Menjalankan
 
+## Diskusi owner berdasarkan data terbaru
+
+Command manual (`/help`, `/stok list`, `/produksi aktif`, dan lainnya) tetap tanpa panggilan AI. Diskusi bebas sekarang menerima snapshot baca dari database: stok fisik/reservasi/tersedia, menu/harga/resep, PO aktif/terjadwal beserta ringkasannya, nilai order dan ranking menu 7×24 jam terakhir, serta saldo akun. Query tetap ditulis backend; AI tidak mendapat akses SQL atau kredensial. Snapshot dibaca ulang untuk setiap konsultasi dan waktu datanya ditampilkan dalam WIB.
+
+Coba dari nomor owner:
+
+1. `Kalau mau tambahan 15 cup, bahan apa yang kurang?`
+2. `Kalau 40 cup?`
+3. `Menu mana yang paling laku seminggu ini, dan apa saranmu?`
+4. Cocokkan fakta di jawaban dengan web. Ubah stok lewat web, lalu tanyakan ulang: jawaban harus memakai snapshot baru.
+5. Matikan akses DB pada lingkungan uji: konsultasi tidak boleh menjawab seolah masih punya data live.
+
+Enam pesan konsultasi terakhir disimpan sebagai konteks lanjutan; snapshot database tidak disimpan sebagai memori. Hitungan kebutuhan bahan dibuat kode dari resep standar dan stok tersedia. Target angka eksplisit `15 cup`/`40 gelas` didukung sampai 1000; tiap menu adalah alternatif skenario, **bukan kapasitas gabungan**. Untuk campuran menu atau variasi khusus, gunakan rekap PO aktual atau minta perincian; simulasi ini tidak menjanjikan kapasitas jual di luar limit PO.
+
+Biaya bahan memakai average cost yang tercatat; biaya belum diketahui ditandai `null`, bukan dianggap gratis. Nilai order tidak sama dengan saldo kas: order belum lunas ikut nilai order, sedangkan saldo dibaca dari ledger akun. Jawaban AI tetap perlu pengujian provider nyata untuk menilai kepatuhan terhadap fakta dan gaya bahasa.
+
+## Menjalankan
+
 Gunakan database development, nomor WhatsApp uji, dan konfigurasi lokal sesuai `README-V2.md` / `LOCAL-WHATSAPP-TEST.md`. Jangan sambungkan gateway uji ke endpoint production. Jangan menyalakan dua gateway dengan sesi WhatsApp yang sama.
 
 ```bash
