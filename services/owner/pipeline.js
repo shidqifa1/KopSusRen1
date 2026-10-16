@@ -1,4 +1,5 @@
-import { OWNER_AI_FALLBACK,OWNER_OUT_OF_SCOPE_REPLY,OwnerCommandGenerator,OwnerConsultant,OwnerRouter,OwnerSummarizer } from './llm.js';
+import {loadPurchaseCatalog,validatePurchase,formatPurchase,executePurchase} from './purchases.js';
+import { OwnerPurchaseExtractor,OWNER_AI_FALLBACK,OWNER_OUT_OF_SCOPE_REPLY,OwnerCommandGenerator,OwnerConsultant,OwnerRouter,OwnerSummarizer } from './llm.js';
 import { executeOwnerReadCommand,executeOwnerWriteCommand,formatOwnerReadResult,parseOwnerCommand,loadOwnerConsultationContext,formatOwnerProductionSimulation } from './commands.js';
 
 const PENDING_TTL_MS=5*60*1000;
@@ -21,11 +22,25 @@ function looksLikeBatchOrder(text) {
   return String(text||'').split(/\r?\n/).map(line=>line.trim()).filter(Boolean).length>=2;
 }
 
-export async function prepareOwnerTurn({payload,snapshot,db,llm={OwnerRouter,OwnerCommandGenerator,OwnerSummarizer,OwnerConsultant}}) {
+export async function prepareOwnerTurn({payload,snapshot,db,llm={OwnerRouter,OwnerCommandGenerator,OwnerSummarizer,OwnerConsultant,OwnerPurchaseExtractor}}) {
   const text=String(payload.text||'').trim();
   const state=snapshot?.orderState||{};
   if (payload.hasImage) return {role:'OWNER',ownerMode:'DIRECT_REPLY',replyText:'Kirim perintah teks atau pakai /help ya.',stateVersion:snapshot?.stateVersion};
   if (exactConfirmation(text)) return {role:'OWNER',ownerMode:'CONFIRMATION',confirmation:exactConfirmation(text),stateVersion:snapshot?.stateVersion};
+  const purchasePending=pendingActive(state)&&state.pending_owner_command.kind==='PURCHASE';
+  if(purchasePending||!pendingActive(state)&&!text.startsWith('/')&&/\b(?:beli|belanja|pembelian)\b/i.test(text)) {
+    try {
+      const catalog=await loadPurchaseCatalog(db);
+      const draft=await (llm.OwnerPurchaseExtractor||OwnerPurchaseExtractor)(text,catalog,purchasePending?state.pending_owner_command.draft:null);
+      // Do not let extraction silently reinterpret an ambiguous negation as a purchase.
+      if(/\b(?:ga|gak|nggak)\s+(?:dah|udah|sudah)\s+beli\b/i.test(text)) {
+        draft.questions=[...(Array.isArray(draft.questions)?draft.questions:[]),'Maksud “ga dah beli” itu bahannya sudah dibeli atau belum?'];
+      }
+      const purchase=validatePurchase(draft,catalog);
+      if(draft.intent==='PURCHASE')return {role:'OWNER',ownerMode:'PURCHASE_DRAFT',purchase,stateVersion:snapshot?.stateVersion};
+      return {role:'OWNER',ownerMode:'DIRECT_REPLY',replyText:'Belum ada belanja dicatat. Untuk mencatat, sebut bahan yang sudah dibeli, jumlah, harga total, dan akun pembayaran. Draft sebelumnya bisa dibatalkan dengan N.',stateVersion:snapshot?.stateVersion};
+    } catch(error) {return {role:'OWNER',ownerMode:'DIRECT_REPLY',replyText:`Belanja belum dicatat. ${error instanceof Error&&/belanja|Bahan|Satuan|Jumlah|biaya/.test(error.message)?error.message:'Detail belum bisa dipahami. Coba kirim ulang sebentar lagi.'}`,stateVersion:snapshot?.stateVersion};}
+  }
   if (pendingActive(state)) return {role:'OWNER',ownerMode:'PENDING_BLOCK',stateVersion:snapshot?.stateVersion};
 
   if (text.startsWith('/')) {
@@ -113,6 +128,18 @@ export async function handleOwnerTurn(db,payload,messageId,prepared) {
       await replaceOwnerState(db,phone,withoutPending(current),'cancelled');
       return {replyText:'Command dibatalkan.'};
     }
+    if(pending.kind==='PURCHASE') {
+      try {
+        const purchase=validatePurchase(pending.draft,await loadPurchaseCatalog(db));
+        if(purchase.questions.length)return {replyText:`Lengkapi dulu sebelum konfirmasi.\n${formatPurchase(purchase)}`};
+        const result=await executePurchase(db,pending.draft,`wa-purchase:${phone}:${pending.source_message_id}`);
+        await replaceOwnerState(db,phone,{...withoutPending(current),last_owner_command:{kind:'PURCHASE',status:'EXECUTED',source_message_id:pending.source_message_id}},'confirmed');
+        return result;
+      }catch(error){
+        await replaceOwnerState(db,phone,withoutPending(current),'cancelled');
+        return {replyText:`Belanja gagal; tidak ada perubahan belanja tersimpan. ${error instanceof Error?error.message:'Coba kirim ulang.'}`};
+      }
+    }
     const parsed=parseOwnerCommand(pending.command);
     if (!parsed.ok||parsed.kind!=='WRITE') {
       await replaceOwnerState(db,phone,withoutPending(current),'cancelled');
@@ -128,6 +155,15 @@ export async function handleOwnerTurn(db,payload,messageId,prepared) {
     }
   }
 
+  if(prepared.ownerMode==='PURCHASE_DRAFT'&&(!pending||isExpired||pending.kind==='PURCHASE')) {
+    const now=Date.now();
+    const base=withoutPending(current);
+    const purchase=validatePurchase(prepared.purchase.draft,await loadPurchaseCatalog(db));
+    await replaceOwnerState(db,phone,{...base,pending_owner_command:{kind:'PURCHASE',draft:purchase.draft,
+      source_message_id:String(payload.waMessageId||messageId),created_at:new Date(now).toISOString(),expires_at:new Date(now+PENDING_TTL_MS).toISOString(),status:'PENDING'}},purchase.questions.length?'collecting_information':'ready_to_confirm');
+    return {replyText:formatPurchase(purchase)};
+  }
+  if(pending?.kind==='PURCHASE'&&!isExpired)return {replyText:prepared.replyText||formatPurchase(validatePurchase(pending.draft,await loadPurchaseCatalog(db)))};
   if (pending&&!isExpired) return {replyText:`Masih ada command pending: ${pending.command}. Balas Y atau N dulu.`};
   const base=isExpired?withoutPending(current):current;
   if (prepared.ownerMode==='WRITE_COMMAND') {
