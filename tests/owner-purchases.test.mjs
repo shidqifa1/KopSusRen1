@@ -135,3 +135,33 @@ test('explicit whole-message negation cannot create a purchase without previous 
  assert.equal(extracted.intent,'OTHER');
  assert.deepEqual(extracted.items,[]);
 });
+
+test('live bootstrap preserves table result shapes during concurrent requests',{
+ skip:process.env.OWNER_LIVE_DB_TEST!=='1',timeout:55000,
+},async()=>{
+ assert.equal(process.env.APP_ENV,'development');
+ const {sql,db}=await import('../dist/db/index.js');
+ const {default:handler}=await import('../dist/api/v2/bootstrap.js');
+ const {createHmac}=await import('node:crypto');
+ const header=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
+ const payload=Buffer.from(JSON.stringify({sub:process.env.VALID_USERNAME,exp:Math.floor(Date.now()/1000)+120})).toString('base64url');
+ const token=header+'.'+payload+'.'+createHmac('sha256',process.env.AUTH_SECRET).update(header+'.'+payload).digest('base64url');
+ const timer=setTimeout(()=>void sql.end({timeout:1}),50000);
+ try{
+  const snapshots=await Promise.all(Array.from({length:2},async()=>{
+   let status;let data;
+   await handler({method:'GET',headers:{authorization:`Bearer ${token}`},query:{}},{status(n){status=n;return this;},json(value){data=value;}});
+   assert.equal(status,200);return data;
+  }));
+  const shapes={products:['id','code','price'],ingredients:['id','code','unit','available_stock'],accounts:['id','name','balance'],
+   orders:['id','order_number','items'],purchases:['id','total_amount','items'],poSessions:['id','status','ingredient_limits'],
+   ledgerEntries:['id','amount','account_name'],recipes:['product_id','ingredient_id','quantity']};
+  for(const snapshot of snapshots){
+   for(const [table,keys] of Object.entries(shapes)){
+    assert.ok(Array.isArray(snapshot[table]),table);
+    for(const row of snapshot[table])for(const key of keys)assert.ok(Object.hasOwn(row,key),`${table} lost ${key}`);
+   }
+   if(snapshot.gatewayStatus)assert.equal(snapshot.gatewayStatus.provider,'baileys');
+  }
+ }finally{clearTimeout(timer);await sql.end({timeout:2});await db.$client.end({timeout:2});}
+});
