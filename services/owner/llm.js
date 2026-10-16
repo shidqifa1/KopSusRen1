@@ -14,6 +14,7 @@ export const OWNER_READ_COMMANDS=Object.freeze([
   '/order list <aktif|hari-ini|besok|po-id>',
   '/order unpaid <aktif|hari-ini|besok|po-id>',
   '/produksi <aktif|hari-ini|besok|po-id>',
+  '/simulasi <jumlah-cup-1-sampai-1000>',
 ]);
 
 export const OWNER_WRITE_COMMANDS=Object.freeze([
@@ -184,7 +185,7 @@ function defaults() {
   return defaultOwnerLlm;
 }
 
-export const OwnerRouter=message=>defaults().ownerRouter(message);
+export const OwnerRouter=(message,history=[])=>defaults().ownerRouter(message,history);
 export const OwnerCommandGenerator=(intent,message)=>defaults().ownerCommandGenerator(intent,message);
 export const OwnerSummarizer=(jsonData,query)=>defaults().ownerSummarizer(jsonData,query);
-export const OwnerConsultant=message=>defaults().ownerConsultant(message);
+export const OwnerConsultant=(message,context=null,history=[])=>defaults().ownerConsultant(message,context,history);

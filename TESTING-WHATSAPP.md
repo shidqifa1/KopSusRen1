@@ -47,9 +47,11 @@ Coba dari nomor owner:
 4. Cocokkan fakta di jawaban dengan web. Ubah stok lewat web, lalu tanyakan ulang: jawaban harus memakai snapshot baru.
 5. Matikan akses DB pada lingkungan uji: konsultasi tidak boleh menjawab seolah masih punya data live.
 
-Enam pesan konsultasi terakhir disimpan sebagai konteks lanjutan; snapshot database tidak disimpan sebagai memori. Hitungan kebutuhan bahan dibuat kode dari resep standar dan stok tersedia. Target angka eksplisit `15 cup`/`40 gelas` didukung sampai 1000; tiap menu adalah alternatif skenario, **bukan kapasitas gabungan**. Untuk campuran menu atau variasi khusus, gunakan rekap PO aktual atau minta perincian; simulasi ini tidak menjanjikan kapasitas jual di luar limit PO.
+Enam pesan konsultasi terakhir disimpan sebagai konteks lanjutan; snapshot database tidak disimpan sebagai memori. Hitungan kebutuhan bahan dan penulisan angka simulasi dibuat kode dari resep standar dan stok tersedia. Target angka eksplisit `15 cup`/`40 gelas` didukung sampai 1000; tiap menu adalah alternatif skenario, **bukan kapasitas gabungan**. Command `/simulasi 15` dan pertanyaan sederhana seperti `kalau 20 cup?` tidak memanggil AI. Untuk campuran menu atau variasi khusus, gunakan rekap PO aktual atau minta perincian; simulasi ini tidak menjanjikan kapasitas jual di luar limit PO.
 
 Biaya bahan memakai average cost yang tercatat; biaya belum diketahui ditandai `null`, bukan dianggap gratis. Nilai order tidak sama dengan saldo kas: order belum lunas ikut nilai order, sedangkan saldo dibaca dari ledger akun. Jawaban AI tetap perlu pengujian provider nyata untuk menilai kepatuhan terhadap fakta dan gaya bahasa.
+
+Uji database development menemukan dua masalah yang sudah diberi regresi: export fungsi AI semula membuang argumen konteks/riwayat, dan AI dapat menyalin angka kebutuhan bahan dari skenario yang salah. Export sekarang meneruskan argumen lengkap; simulasi numerik langsung diformat backend. Tes konsultasi umum tetap memeriksa penerusan data ke model, sedangkan tes target cup memeriksa angka pasti dan memastikan model tidak dipanggil. `/produksi aktif` juga menampilkan kebutuhan antrean yang belum selesai dalam teks, bukan JSON/UUID internal.
 
 ## Ambil alih percakapan
 

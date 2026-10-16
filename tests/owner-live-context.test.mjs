@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {loadOwnerConsultationContext} from '../services/owner/commands.js';
+import {loadOwnerConsultationContext,formatOwnerReadResult,parseOwnerCommand} from '../services/owner/commands.js';
 import {prepareOwnerTurn,handleOwnerTurn} from '../services/owner/pipeline.js';
-import {createOwnerLlm} from '../services/owner/llm.js';
+import {createOwnerLlm,OwnerConsultant,OwnerRouter} from '../services/owner/llm.js';
 
 const snapshot=()=>({observed_at:'2026-10-16T01:00:00Z',
   stock:[{ingredient_id:'milk',name:'Susu',unit:'ML',physical_stock:1500,reserved_stock:500,available_stock:1000,average_cost:20}],
@@ -60,7 +60,7 @@ test('manual commands keep bypassing AI and consultation queries',async()=>{
   assert.equal(calls,0);
 });
 
-test('consultation passes fresh facts and bounded history to the model without a mutation command',async()=>{
+test('general consultation passes fresh facts and bounded history without a mutation command',async()=>{
   const f=readDb();
   const history=[{role:'user',content:'kalau tambah 15 cup?'},{role:'assistant',content:'Susu kurang 500 ml.'}];
   let received;
@@ -68,9 +68,9 @@ test('consultation passes fresh facts and bounded history to the model without a
   const llm={OwnerRouter:async(_text,previous)=>{assert.deepEqual(previous,history);return 'CONSULTATION';},
     OwnerCommandGenerator:async()=>{commandCalls++;},OwnerSummarizer:async()=>{throw new Error('Unexpected summary');},
     OwnerConsultant:async(text,data,previous)=>{received={text,data,previous};return 'Untuk tambahan 20 cup, susu kurang 1000 ml.';}};
-  const result=await prepareOwnerTurn({payload:{text:'kalau 20 cup?'},snapshot:{orderState:{owner_consultation_history:history}},db:f.db,llm});
+  const result=await prepareOwnerTurn({payload:{text:'Apa saran operasional dari kondisi usaha sekarang?'},snapshot:{orderState:{owner_consultation_history:history}},db:f.db,llm});
   assert.equal(result.ownerMode,'CONSULTATION');
-  assert.equal(received.data.production_scenarios[0].ingredients[0].shortage,1000);
+  assert.equal(received.data.stock[0].available_stock,1000);
   assert.deepEqual(received.previous,history);
   assert.equal(commandCalls,0);
   assert.match(result.replyText,/Data.*WIB/);
@@ -116,4 +116,67 @@ test('only bounded consultation messages are saved; the full DB snapshot is not 
   assert.equal(state.owner_consultation_history.at(-2).content,'kalau 40 cup?');
   assert.equal(state.owner_consultation_history.at(-1).role,'assistant');
   assert.equal(state.stock,undefined);
+});
+
+test('production exports forward live data and conversation history to the SDK',async()=>{
+  const previousFetch=globalThis.fetch;
+  const previousKey=process.env.GROQ_API_KEY;
+  const requests=[];
+  process.env.GROQ_API_KEY='test-key';
+  globalThis.fetch=async(_url,options)=>{
+    requests.push(JSON.parse(options.body));
+    const content=requests.length===1?JSON.stringify({answer:'Susu tersedia 1000 ml.'}):'CONSULTATION';
+    return new Response(JSON.stringify({choices:[{message:{content}}]}),{status:200,headers:{'Content-Type':'application/json'}});
+  };
+  try {
+    const data=await loadOwnerConsultationContext(readDb().db,'15 cup');
+    const history=[{role:'user',content:'tambahan 15 cup?'},{role:'assistant',content:'Kebutuhan 1500 ml.'}];
+    assert.equal(await OwnerConsultant('kalau 20 cup?',data,history),'Susu tersedia 1000 ml.');
+    const payload=JSON.parse(requests[0].messages.at(-1).content);
+    assert.equal(payload.latest_business_data.stock[0].available_stock,1000);
+    assert.ok(requests[0].messages.some(message=>message.content==='tambahan 15 cup?'));
+    assert.equal(await OwnerRouter('kalau 20 cup?',history),'CONSULTATION');
+    assert.ok(requests[1].messages.some(message=>message.content==='tambahan 15 cup?'));
+  } finally {
+    globalThis.fetch=previousFetch;
+    if(previousKey===undefined) delete process.env.GROQ_API_KEY;else process.env.GROQ_API_KEY=previousKey;
+  }
+});
+
+test('production command displays only outstanding requirements in readable text',()=>{
+  const result={type:'PRODUCTION',data:{po:{id:'private-po-id',name:'PO Uji',status:'OPEN'},summary:{
+    totalOrders:2,totalCups:3,paid:1,unpaid:1,revenue:28000,
+    ingredientTotals:[{name:'Susu',quantity:300,unit:'ml'}],
+    productionMenuTotals:[{name:'Aren',quantity:1}],
+    productionIngredientTotals:[{name:'Susu',quantity:100,unit:'ml'}],
+  }}};
+  const text=formatOwnerReadResult(result);
+  assert.match(text,/PO Uji/);
+  assert.match(text,/1x Aren/);
+  assert.match(text,/Susu: 100 ml/);
+  assert.doesNotMatch(text,/300|private-po-id|product_id|"summary"/);
+  const done=formatOwnerReadResult({...result,data:{...result.data,summary:{...result.data.summary,productionMenuTotals:[],productionIngredientTotals:[]}}});
+  assert.match(done,/Tidak ada.*produksi/i);
+});
+
+test('numeric production consultation is rendered by code, without asking AI to restate quantities',async()=>{
+  let calls=0;
+  const result=await prepareOwnerTurn({payload:{text:'kalau 15 cup?'},snapshot:{orderState:{}},db:readDb().db,
+    llm:{OwnerRouter:async()=>{throw new Error('Simple simulation must bypass AI routing');},OwnerConsultant:async()=>{calls++;return 'Butuh 2250 ml';}}});
+  assert.equal(calls,0);
+  assert.match(result.replyText,/15 cup/);
+  assert.match(result.replyText,/Susu: 1500 ML/);
+  assert.match(result.replyText,/Susu 500 ML/);
+  assert.doesNotMatch(result.replyText,/2250/);
+});
+
+test('manual simulation uses the same calculation and formatter without any AI calls',async()=>{
+  const parsed=parseOwnerCommand('/simulasi 15');
+  assert.equal(parsed.kind,'READ');
+  assert.equal(parseOwnerCommand('/simulasi -1').ok,false);
+  const never=async()=>{throw new Error('Unexpected AI call');};
+  const result=await prepareOwnerTurn({payload:{text:'/simulasi 15'},snapshot:{orderState:{}},db:readDb().db,
+    llm:{OwnerRouter:never,OwnerConsultant:never}});
+  assert.match(result.replyText,/Susu: 1500 ML/);
+  assert.match(result.replyText,/Susu 500 ML/);
 });

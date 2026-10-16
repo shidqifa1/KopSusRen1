@@ -1,5 +1,5 @@
 import { OWNER_AI_FALLBACK,OWNER_OUT_OF_SCOPE_REPLY,OwnerCommandGenerator,OwnerConsultant,OwnerRouter,OwnerSummarizer } from './llm.js';
-import { executeOwnerReadCommand,executeOwnerWriteCommand,formatOwnerReadResult,parseOwnerCommand,loadOwnerConsultationContext } from './commands.js';
+import { executeOwnerReadCommand,executeOwnerWriteCommand,formatOwnerReadResult,parseOwnerCommand,loadOwnerConsultationContext,formatOwnerProductionSimulation } from './commands.js';
 
 const PENDING_TTL_MS=5*60*1000;
 
@@ -42,7 +42,10 @@ export async function prepareOwnerTurn({payload,snapshot,db,llm={OwnerRouter,Own
 
   try {
     const history=(state.owner_consultation_history||[]).slice(-6);
-    const route=await llm.OwnerRouter(text,history);
+    const simpleSimulation=/\b\d+\s*(?:cup|gelas)\b/i.test(text)
+      &&/\b(?:kalau|kalo|simulasi|target|tambahan|butuh|perlu|cukup|kebutuhan)\b/i.test(text)
+      &&!/\b(?:buka|tutup|konfirmasi|bayar|batal|batalkan|pesankan|orderkan|kurangi|tambahkan)\b/i.test(text);
+    const route=simpleSimulation?'CONSULTATION':await llm.OwnerRouter(text,history);
     if (route==='OUT_OF_SCOPE') {
       return {role:'OWNER',ownerMode:'DIRECT_REPLY',route,replyText:OWNER_OUT_OF_SCOPE_REPLY,stateVersion:snapshot?.stateVersion};
     }
@@ -50,7 +53,8 @@ export async function prepareOwnerTurn({payload,snapshot,db,llm={OwnerRouter,Own
       let context=null;
       try { if (db) context=await loadOwnerConsultationContext(db,text); }
       catch { return {role:'OWNER',ownerMode:'DIRECT_REPLY',route,replyText:'Data usaha terbaru belum bisa dibaca. Coba lagi sebentar; aku belum bisa memastikan stok atau hitungannya.',stateVersion:snapshot?.stateVersion}; }
-      const answer=await llm.OwnerConsultant(text,safeOperationalJson(context),history);
+      const answer=context?.simulation?.target_cups?formatOwnerProductionSimulation(context)
+        :await llm.OwnerConsultant(text,safeOperationalJson(context),history);
       const timestamp=context?new Date(context.observed_at).toLocaleString('id-ID',{timeZone:'Asia/Jakarta',dateStyle:'short',timeStyle:'short'}):null;
       const replyText=timestamp?`${answer}\n\nData ${timestamp} WIB · penjualan 7×24 jam terakhir.`:answer;
       return {role:'OWNER',ownerMode:'CONSULTATION',route,replyText,stateVersion:snapshot?.stateVersion};

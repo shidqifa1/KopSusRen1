@@ -34,6 +34,9 @@ export function parseOwnerCommand(input) {
     return {ok:true,kind:'READ',action:verb==='list'?'ORDER_LIST':'ORDER_UNPAID',args:{selector:selector(tokens[2])},command:`/order ${verb} ${selector(tokens[2])}`};
   }
   if (head==='/produksi'&&tokens.length===2&&selector(tokens[1])) return {ok:true,kind:'READ',action:'PRODUCTION',args:{selector:selector(tokens[1])},command:`/produksi ${selector(tokens[1])}`};
+  if (head==='/simulasi'&&tokens.length===2&&/^\d{1,4}$/.test(tokens[1])&&Number(tokens[1])>0&&Number(tokens[1])<=1000) {
+    return {ok:true,kind:'READ',action:'SIMULATION',args:{quantity:Number(tokens[1])},command:`/simulasi ${Number(tokens[1])}`};
+  }
   if (head==='/stok'&&['tambah','kurang'].includes(verb)&&tokens.length===5) {
     const quantity=positiveNumber(tokens[3]);
     const unit=tokens[4].toUpperCase()==='GR'?'G':tokens[4].toUpperCase();
@@ -177,9 +180,32 @@ export async function loadOwnerConsultationContext(db,text='') {
   return context;
 }
 
+export function formatOwnerProductionSimulation(context) {
+  const target=context.simulation?.target_cups;
+  if (!target) return 'Sebutkan target 1 sampai 1000 cup, misalnya /simulasi 15.';
+  const lines=[`Simulasi tambahan ${target} cup per menu. Pilih satu skenario; ini bukan campuran menu.`,
+    'Resep standar, memakai stok bebas setelah reservasi.'];
+  for (const scenario of context.production_scenarios) {
+    lines.push('',scenario.name);
+    if (scenario.max_additional_cups_by_stock===null) {lines.push('Resep atau data bahan belum lengkap; kebutuhan belum bisa dipastikan.');continue;}
+    lines.push('Kebutuhan:',...scenario.ingredients.map(item=>`• ${item.name}: ${item.target_quantity} ${item.unit}`));
+    const shortages=scenario.ingredients.filter(item=>item.shortage>0);
+    lines.push(shortages.length?`Kurang: ${shortages.map(item=>`${item.name} ${item.shortage} ${item.unit}`).join(', ')}.`:'Bahan cukup untuk target ini.');
+    const openPo=context.po_sessions.filter(po=>po.status==='OPEN');
+    if (!openPo.length) lines.push('Belum ada PO aktif; ini hanya simulasi stok.');
+    else for (const po of openPo) {
+      const live=po.availability?.products?.find(item=>item.code===scenario.code);
+      if (!live) lines.push('Kapasitas menu di PO aktif belum bisa dipastikan.');
+      else lines.push(`Batas tersedia di PO aktif: ${live.availableQty} cup${!live.available||Number(live.availableQty)<target?' — target belum bisa diterima seluruhnya':''}.`);
+    }
+  }
+  return lines.join('\n');
+}
+
 export async function executeOwnerReadCommand(db,parsed) {
   if (!parsed?.ok||parsed.kind!=='READ') throw new Error('Read command tidak valid.');
   if (parsed.action==='HELP') return {command:parsed.command,type:'HELP',data:{text:ownerCommandHelp()}};
+  if (parsed.action==='SIMULATION') return {command:parsed.command,type:'SIMULATION',data:await loadOwnerConsultationContext(db,`${parsed.args.quantity} cup`)};
   if (parsed.action==='MENU_LIST') {
     const rows=await db`select code,name,price::float8 price from products where is_active order by name limit 100`;
     return {command:parsed.command,type:'MENU',data:rows};
@@ -273,8 +299,25 @@ export async function executeOwnerWriteCommand(db,parsed) {
 
 export function formatOwnerReadResult(result) {
   if (result.type==='HELP') return result.data.text;
+  if (result.type==='SIMULATION') return formatOwnerProductionSimulation(result.data);
   if (result.type==='MENU') return result.data.length?['Menu aktif:',...result.data.map(row=>`• ${row.name} — Rp${Number(row.price).toLocaleString('id-ID')}`)].join('\n'):'Belum ada menu aktif.';
   if (result.type==='STOCK') return result.data.length?['Stok tersedia:',...result.data.map(row=>`• ${row.name}: ${Number(row.available_stock)} ${row.unit}${Number(row.available_stock)<=Number(row.threshold)?' ⚠️':''}`)].join('\n'):'Stok tidak ditemukan.';
   if (result.type==='PO_LIST') return result.data.length?['Daftar PO:',...result.data.map(row=>`• ${row.name} · ${row.delivery_date} · ${row.status}`)].join('\n'):'Belum ada PO.';
+  if (['PO_STATUS','PRODUCTION'].includes(result.type)) {
+    const {po,summary}=result.data;
+    if (!summary) return `Ringkasan ${po.name} belum tersedia.`;
+    const lines=[`${po.name} · ${po.status}`,
+      `${summary.totalOrders||0} order / ${summary.totalCups||0} cup`,
+      `Lunas: ${summary.paid||0} · Belum lunas: ${summary.unpaid||0}`,
+      `Nilai order: Rp${Number(summary.revenue||0).toLocaleString('id-ID')}`];
+    if (result.type==='PRODUCTION') {
+      const menu=summary.productionMenuTotals||[];
+      const ingredients=summary.productionIngredientTotals||[];
+      if (!menu.length) lines.push('Tidak ada antrean produksi yang belum selesai.');
+      else lines.push('Masih perlu diproduksi:',...menu.map(item=>`• ${item.quantity}x ${item.name}`),
+        'Bahan untuk antrean ini:',...ingredients.map(item=>`• ${item.name}: ${Number(item.quantity)} ${item.unit}`));
+    }
+    return lines.join('\n');
+  }
   return JSON.stringify(result.data,null,2).slice(0,4000);
 }
