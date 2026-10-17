@@ -252,13 +252,14 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     </div>
   </div>
 
-  <details class="card cash-history">
+  <details class="card cash-history" open>
     <summary><span><small>DATA KAS</small><strong>Riwayat mutasi kas</strong></span><b aria-hidden="true">⌄</b></summary>
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
       <span>Riwayat mutasi terbaru</span>
       <span id="mutasiCount" style="font-size:12px;color:var(--abu2)"></span>
     </div>
     <div id="kasMutasiList"></div>
+    <button type="button" id="cashShowMore" class="btn btn-outline btn-full is-hidden" hidden aria-controls="kasMutasiList" onclick="showMoreCashHistory()">Tampilkan lebih banyak</button>
   </details>
 
   <div class="tabs" role="tablist" aria-label="Jenis transaksi">
@@ -316,10 +317,6 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     </div>
   </div>
 
-  <div class="card" style="margin-top:4px;">
-    <div class="card-title">Riwayat Pengeluaran & Pemasukan</div>
-    <div id="pengeluaranList"></div>
-  </div>
   <div class="page-bottom"></div>
 </div>
 
@@ -2216,12 +2213,22 @@ async function simpanEditResep() {
 }
 
 // ============= RINGKASAN KAS DI BELANJA & PENGELUARAN =============
+let cashHistoryLimit = 10;
+function showMoreCashHistory() {
+  cashHistoryLimit += 10;
+  renderCashOverview();
+}
+
 function renderCashOverview() {
   document.getElementById('saldoKasDisplay').textContent = rp(state.saldoKas);
 
-  const mutasi = state.mutasiKas.slice().sort((a,b) => String(b.createdAt || b.tanggal+'T'+b.waktu).localeCompare(String(a.createdAt || a.tanggal+'T'+a.waktu))).slice(0,30);
+  const mutasi = state.mutasiKas.slice().sort((a,b) => String(b.createdAt || b.tanggal+'T'+b.waktu).localeCompare(String(a.createdAt || a.tanggal+'T'+a.waktu))).slice(0,cashHistoryLimit);
   const container = document.getElementById('kasMutasiList');
-  document.getElementById('mutasiCount').textContent = state.mutasiKas.length + ' transaksi';
+  document.getElementById('mutasiCount').textContent = `${mutasi.length} dari ${state.mutasiKas.length} transaksi`;
+  const hasMore = mutasi.length < state.mutasiKas.length;
+  const moreButton = document.getElementById('cashShowMore');
+  moreButton.hidden = !hasMore;
+  moreButton.classList.toggle('is-hidden', !hasMore);
 
   if(!mutasi.length) {
     container.innerHTML='<div class="empty-state"><strong>Belum ada mutasi kas</strong><span>Catat belanja, pemasukan, atau pengeluaran untuk mengisi riwayat kas.</span></div>';
@@ -2257,22 +2264,6 @@ function renderPengeluaran() {
       `<option value="${a.id}">${safeText(a.name)} · ${rp(a.balance)}</option>`
     ).join('');
     if ((state.accounts || []).some(a => a.id === selectedAccount && a.type !== 'QRIS')) accountSelect.value = selectedAccount;
-  }
-
-  // List riwayat pengeluaran
-  const items = state.pengeluaranList.slice().sort((a,b) => String(b.createdAt || b.tanggal).localeCompare(String(a.createdAt || a.tanggal))).slice(0, 30);
-  const container = document.getElementById('pengeluaranList');
-  if (!items.length) {
-    container.innerHTML = '<div class="empty-state"><strong>Belum ada catatan transaksi</strong><span>Gunakan salah satu form di atas untuk mencatat transaksi pertama.</span></div>';
-  } else {
-    container.innerHTML = items.map(i => `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--krem2)">
-        <div>
-          <div style="font-size:13px;font-weight:600">${safeText(i.keterangan)}</div>
-          <div style="font-size:11px;color:var(--abu2)">${safeText(i.tanggal)} · ${safeText(i.tipe)}</div>
-        </div>
-        <div class="${i.jenis === 'masuk' ? 'kas-in' : 'kas-out'}">${i.jenis === 'masuk' ? '+' : '-'}${rp(i.jumlah)}</div>
-      </div>`).join('');
   }
 
   // PASANG EVENT LISTENER UNTUK PREVIEW HARGA (HAPUS YANG LAMA DULU)

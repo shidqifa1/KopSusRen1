@@ -126,12 +126,12 @@ test('failed recipe save leaves the editor open', async () => {
   await context.simpanEditResep();
   assert.equal(context.window.closed,false);
 });
-test('cash and expense history show the newest entries first regardless of input order', () => {
+test('cash history shows the newest entries first regardless of input order', () => {
   const {context,node}=appHarness();
   vm.runInContext(`state.mutasiKas=[{tanggal:'2026-10-17',waktu:'10:00',keterangan:'TERBARU',jumlah:1,saldo:1,jenis:'masuk'},{tanggal:'2026-10-16',waktu:'10:00',keterangan:'LAMA',jumlah:1,saldo:1,jenis:'masuk'}];
     state.pengeluaranList=[{tanggal:'2026-10-17',keterangan:'TERBARU',jumlah:1,jenis:'masuk'},{tanggal:'2026-10-16',keterangan:'LAMA',jumlah:1,jenis:'masuk'}];`,context);
   context.renderPengeluaran();
-  for(const id of ['kasMutasiList','pengeluaranList']) {
+  for(const id of ['kasMutasiList']) {
     const content=node(id).innerHTML;
     assert.ok(content.indexOf('TERBARU') < content.indexOf('LAMA'),id);
   }
@@ -263,4 +263,31 @@ test('returning to purchase-based HPP clears both manual cost fields',async()=>{
   const update=calls.find(call=>/update ingredients/.test(call.query));
   assert.equal(update.values[0],null);
   assert.equal(update.values[1],null);
+});
+
+test('cash table starts with ten rows and reveals ten more per click',()=>{
+  const {context,node}=appHarness();
+  vm.runInContext(`state.mutasiKas=Array.from({length:25},(_,i)=>({tanggal:'2026-10-17',waktu:'10:00',createdAt:new Date(Date.UTC(2026,9,17,0,i)).toISOString(),keterangan:'Transaksi '+i,jenis:'masuk',jumlah:1000,saldo:1000*(i+1)}));`,context);
+  const count=()=> (node('kasMutasiList').innerHTML.match(/<tr>/g)||[]).length-1;
+  context.renderCashOverview();
+  assert.equal(count(),10);
+  assert.equal(node('cashShowMore').hidden,false);
+  assert.equal(node('mutasiCount').textContent,'10 dari 25 transaksi');
+  context.showMoreCashHistory();
+  assert.equal(count(),20);
+  context.showMoreCashHistory();
+  assert.equal(count(),25);
+  assert.equal(node('cashShowMore').hidden,true);
+});
+test('cash history hides show-more for zero through ten entries',()=>{
+  for(const size of [0,1,10]) {
+    const {context,node}=appHarness();
+    vm.runInContext(`state.mutasiKas=Array.from({length:${size}},()=>({tanggal:'2026-10-17',waktu:'10:00',jenis:'masuk',jumlah:1,saldo:1}));`,context);
+    context.renderCashOverview();
+    assert.equal(node('cashShowMore').hidden,true,String(size));
+  }
+});
+test('cash table is initially expanded and the duplicate expense list is removed',()=>{
+  assert.match(html,/<details class="card cash-history" open>/);
+  assert.doesNotMatch(html,/id="pengeluaranList"|Riwayat Pengeluaran & Pemasukan/);
 });
