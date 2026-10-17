@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" href="icon-192.png">
 
 <!-- Warna background saat loading -->
-<link rel="stylesheet" href="styles.css?v=20261004-po-popup">
+<link rel="stylesheet" href="styles.css?v=20261017-web-polish">
 <meta charset="UTF-8">
 <title>Baristack App</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -79,7 +79,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <div class="top-bar-text">
     <h1>Baristack App</h1>
     <div class="subtitle" id="topDate"></div>
-    <div class="subtitle sync-status" id="syncStatus"></div>
+    <div class="subtitle sync-status" id="syncStatus" role="status" aria-live="polite"></div>
   </div>
 </div>
 
@@ -142,7 +142,10 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
 <!-- ============== DASHBOARD ============== -->
 <div class="page active" id="page-dashboard">
-  <div class="section-title">Dashboard</div>
+  <div class="workspace-heading">
+    <div><p class="workspace-eyebrow">RINGKASAN USAHA</p><div class="section-title">Dashboard</div><p class="page-description">Pantau penjualan, kas, dan bahan sebelum mulai produksi.</p></div>
+    <button class="btn btn-primary" onclick="goPage('po')">+ Catat penjualan</button>
+  </div>
 
   <div id="alertPanel"></div>
 
@@ -153,12 +156,12 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
       <div class="stat-sub" id="dashJumlahCup">0 cup terjual</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Untung Hari Ini</div>
+      <div class="stat-label">Estimasi Untung Hari Ini</div>
       <div class="stat-value" id="dashUntung">Rp0</div>
       <div class="stat-sub" id="dashMargin">margin 0%</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Untung Bulan Ini</div>
+      <div class="stat-label">Estimasi Untung Bulan Ini</div>
       <div class="stat-value" id="dashBulan">Rp0</div>
       <div class="stat-sub">akumulasi bulan ini</div>
     </div>
@@ -169,9 +172,10 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     </div>
   </div>
 
+  <div class="dashboard-panels">
   <div class="card">
     <div class="card-title">Top 5 Customer Setia</div>
-    <div id="topCustomer" class="empty-state"><strong>Belum ada pelanggan teratas</strong><span>Catat penjualan untuk mulai melihat pelanggan yang paling sering membeli.</span></div>
+    <div id="topCustomer"><strong>Belum ada pelanggan teratas</strong><span>Catat penjualan untuk mulai melihat pelanggan yang paling sering membeli.</span></div>
   </div>
 
   <div class="card">
@@ -184,8 +188,6 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div id="stokSummary"></div>
   </div>
 
-  <div class="btn-group">
-    <button class="btn btn-secondary btn-full" onclick="goPage('po')">+ Order / Penjualan</button>
   </div>
   <div class="page-bottom"></div>
 </div>
@@ -194,9 +196,9 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <div class="page" id="page-riwayat">
   <div class="section-title">Riwayat Penjualan</div>
   <div class="card">
-    <label>Filter Tanggal</label>
+    <label for="filterTanggal">Filter Tanggal</label>
     <input type="date" id="filterTanggal" onchange="renderRiwayat()">
-    <label>Cari Customer</label>
+    <label for="filterCustomer">Cari Customer</label>
     <input type="text" id="filterCustomer" placeholder="Nama customer..." oninput="renderRiwayat()">
   </div>
   <div id="riwayatList"></div>
@@ -221,7 +223,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <div class="page" id="page-stok">
   <div class="section-title">Stok & Bahan Baku</div>
   <div class="alert warning">
-    <div>Tap baris untuk edit harga, stok, atau threshold. Input harga per kemasan. HPP per satuan dihitung otomatis. Simple syrup HPP dihitung otomatis dari harga gula pasir dan air.</div>
+    <div>Pilih bahan untuk memperbarui stok fisik dan batas restock. Catat pembelian di Belanja &amp; Pengeluaran agar stok, HPP, dan saldo diperbarui bersama.</div>
   </div>
   <div id="stokList"></div>
   <div id="restockPanel" style="margin-top:8px;"></div>
@@ -232,7 +234,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <div class="page" id="page-resep">
   <div class="section-title">Resep Menu</div>
   <div class="alert success">
-    <div>Tap menu untuk edit resep dan harga jual. Perubahan tersimpan otomatis.</div>
+    <div>Pilih menu untuk mengubah komposisi dan harga jual, lalu tekan Simpan Resep.</div>
   </div>
   <div id="resepList"></div>
   <div class="page-bottom"></div>
@@ -268,21 +270,21 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <!-- BELANJA BAHAN -->
   <div id="tab-belanjaBahan" class="card" role="tabpanel">
     <div class="card-title">Catat Belanja Bahan</div>
-    <label>Pilih Bahan</label>
+    <label for="belBahan">Pilih Bahan</label>
     <select id="belBahan"></select>
 
-    <label>Jumlah Dibeli (dalam satuan bahan)</label>
+    <label for="belJumlah">Jumlah Dibeli (dalam satuan bahan)</label>
     <input type="number" id="belJumlah" placeholder="Contoh: 1000 gram, 2 pcs, 946 ml, dll" step="any">
 
-    <label>Total Harga Beli (Rp)</label>
+    <label for="belHarga">Total Harga Beli (Rp)</label>
     <input type="number" id="belHarga" placeholder="0">
-    <label>Dibayar dari</label>
+    <label for="belAccount">Dibayar dari</label>
     <select id="belAccount"></select>
     <div id="previewHargaSatuan" style="background:var(--hijau4);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:var(--hijau);font-weight:600;">
       Harga per satuan: <span id="previewHargaValue">Rp0,00</span> / <span id="previewSatuan">gram</span>
     </div>
 
-    <label>Keterangan (opsional)</label>
+    <label for="belKeterangan">Keterangan (opsional)</label>
     <input type="text" id="belKeterangan" placeholder="Contoh: beli 2 kotak susu">
 
     <div class="btn-group">
@@ -293,9 +295,9 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <!-- PEMASUKAN LAIN -->
   <div id="tab-pemasukanLain" class="card" role="tabpanel" style="display:none">
     <div class="card-title">Catat Pemasukan Lain</div>
-    <label>Jumlah (Rp)</label>
+    <label for="pmasJumlah">Jumlah (Rp)</label>
     <input type="number" id="pmasJumlah" placeholder="0">
-    <label>Sumber / Keterangan</label>
+    <label for="pmasKet">Sumber / Keterangan</label>
     <input type="text" id="pmasKet" placeholder="Contoh: Tips, piutang lunas...">
     <div class="btn-group">
       <button class="btn btn-primary btn-full" onclick="simpanPemasukan()">Simpan Pemasukan</button>
@@ -305,9 +307,9 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <!-- PENGELUARAN LAIN -->
   <div id="tab-pengeluaranLain" class="card" role="tabpanel" style="display:none">
     <div class="card-title">Catat Pengeluaran Lain</div>
-    <label>Jumlah (Rp)</label>
+    <label for="pengeJumlah">Jumlah (Rp)</label>
     <input type="number" id="pengeJumlah" placeholder="0">
-    <label>Keperluan / Keterangan</label>
+    <label for="pengeKet">Keperluan / Keterangan</label>
     <input type="text" id="pengeKet" placeholder="Contoh: Ambil untung, bayar utang...">
     <div class="btn-group">
       <button class="btn btn-primary btn-full" onclick="simpanPengeluaran()">Simpan Pengeluaran</button>
@@ -327,8 +329,8 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
     <div class="card">
       <div class="card-title">Generate Laporan</div>
-      <label>Tanggal Laporan</label>
-      <input type="date" id="laporanTanggal">
+      <label for="laporanTanggal">Tanggal Laporan</label>
+    <input type="date" id="laporanTanggal">
       <div class="btn-group">
         <button class="btn btn-primary btn-full" onclick="generateLaporan()">Generate & Download Laporan</button>
       </div>
@@ -347,8 +349,8 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
     <div class="card">
       <div class="card-title">Saldo Kas Awal</div>
-      <label>Set Saldo Kas (Rp)</label>
-      <input type="number" id="setSaldo" placeholder="Contoh: 59281">
+      <label for="setSaldo">Set Saldo Kas (Rp)</label>
+    <input type="number" id="setSaldo" placeholder="Contoh: 59281">
       <div class="btn-group">
         <button class="btn btn-primary" onclick="setSaldoAwal()">Set Saldo</button>
       </div>
@@ -431,27 +433,27 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div class="modal-title" id="modalBahanTitle">Edit Bahan</div>
     <input type="hidden" id="editBahanId">
 
-    <label>Nama Bahan</label>
+    <label for="editBahanNama">Nama Bahan</label>
     <input type="text" id="editBahanNama" disabled style="background:var(--krem2)">
 
-    <label>Satuan Dasar</label>
+    <label for="editBahanSatuan">Satuan Dasar</label>
     <input type="text" id="editBahanSatuan" disabled style="background:var(--krem2)">
 
-    <label>Stok Saat Ini (dalam <span id="editBahanSatuanLabel">satuan</span>)</label>
+    <label for="editBahanStok">Stok Saat Ini (dalam <span id="editBahanSatuanLabel">satuan</span>)</label>
     <input type="number" id="editBahanStok" step="any" placeholder="Contoh: 1000">
 
     <div id="editBahanPriceFields" style="background:var(--krem2);padding:10px;border-radius:8px;margin:10px 0">
       <label style="margin-top:0">Harga Per Kemasan (Rp)</label>
       <input type="number" id="editBahanHargaKemasan" step="any" placeholder="Contoh: 67000">
 
-      <label>Isi Per Kemasan (dalam satuan dasar)</label>
-      <input type="number" id="editBahanIsiKemasan" step="any" placeholder="Contoh: 1000">
+      <label for="editBahanIsiKemasan">Isi Per Kemasan (dalam satuan dasar)</label>
+    <input type="number" id="editBahanIsiKemasan" step="any" placeholder="Contoh: 1000">
 
       <div style="font-size:12px;margin-top:8px;color:var(--hijau)" id="hargaPerSatuanPreview"></div>
     </div>
     <div id="editBahanV2CostNote" class="form-help" style="display:none">HPP dihitung otomatis dari transaksi Belanja Bahan agar nilai stok dan kas tetap sinkron.</div>
 
-    <label>Threshold Restock (batas minimal)</label>
+    <label for="editBahanThreshold">Threshold Restock (batas minimal)</label>
     <input type="number" id="editBahanThreshold" placeholder="Contoh: 200">
 
     <div class="btn-group">
@@ -466,9 +468,9 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <button type="button" class="modal-close" onclick="closeModal('modalResep')" aria-label="Tutup dialog"><span aria-hidden="true">✕</span></button>
     <div class="modal-title" id="modalResepTitle">Edit Resep</div>
     <input type="hidden" id="editResepId">
-    <label>Nama Menu</label>
+    <label for="editResepNama">Nama Menu</label>
     <input type="text" id="editResepNama" disabled style="background:var(--krem2)">
-    <label>Harga Jual (Rp)</label>
+    <label for="editResepHarga">Harga Jual (Rp)</label>
     <input type="number" id="editResepHarga">
     <div class="card-title" style="margin-top:14px;margin-bottom:8px;">Komposisi Resep</div>
     <div id="editResepBahan"></div>
@@ -975,6 +977,7 @@ function legacyStateFromV2(data) {
           jumlah: 1,
           totalHarga: Number(item.unit_price),
           modal: modalPerCup,
+          noIce: Boolean(item.no_ice),
           bayar: o.payment_method === 'CASH' ? 'Cash' : 'QRIS',
           keterangan: o.notes || '',
         });
@@ -986,6 +989,7 @@ function legacyStateFromV2(data) {
     bahan, menu, penjualan,
     mutasiKas: (data.ledgerEntries || []).filter(entry => entry.account_type === 'CASH').map(entry => ({
       id: entry.id,
+      createdAt: entry.created_at,
       tanggal: new Date(entry.created_at).toLocaleDateString('en-CA'),
       waktu: new Date(entry.created_at).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }),
       jenis: Number(entry.amount) >= 0 ? 'masuk' : 'keluar',
@@ -995,6 +999,7 @@ function legacyStateFromV2(data) {
     })),
     pengeluaranList: data.purchases.map(p => ({
       id: p.id,
+      createdAt: p.purchased_at,
       tanggal: new Date(p.purchased_at).toLocaleDateString('en-CA'),
       jenis: 'keluar',
       jumlah: Number(p.total_amount),
@@ -1002,6 +1007,7 @@ function legacyStateFromV2(data) {
       keterangan: `${p.items?.[0]?.ingredient_name || 'Bahan'} · ${p.supplier || 'Supplier'}`,
     })).concat((data.ledgerEntries || []).filter(entry => entry.entry_type === 'ADJUSTMENT' && entry.account_type === 'CASH').map(entry => ({
       id: entry.id,
+      createdAt: entry.created_at,
       tanggal: new Date(entry.created_at).toLocaleDateString('en-CA'),
       jenis: Number(entry.amount) >= 0 ? 'masuk' : 'keluar',
       jumlah: Math.abs(Number(entry.amount)),
@@ -1050,41 +1056,37 @@ async function apiFetch(url, options = {}) {
 
 async function loadState() {
   showLoading('Menyinkronkan data...');
+  let cachedState = null;
+  try { cachedState = JSON.parse(localStorage.getItem('kopiManagerV2Cache') || 'null'); }
+  catch { /* Cache rusak tidak boleh menghalangi pengambilan data server. */ }
   try {
     const data = await window.kopsusrenServices.bootstrap();
-    const cachedBeforeSync = localStorage.getItem('kopiManagerV2Cache');
-    const savedReports = cachedBeforeSync ? (JSON.parse(cachedBeforeSync).laporanList || []) : [];
     state = legacyStateFromV2(data);
-    state.laporanList = savedReports;
+    state.laporanList = cachedState?.laporanList || [];
     localStorage.setItem('kopiManagerV2Cache', JSON.stringify(state));
     updateSyncStatus(true);
+  } catch (error) {
+    state = cachedState?.isV2 ? cachedState : legacyStateFromV2({
+      ingredients: [], products: [], recipes: [], orders: [], accounts: [],
+      purchases: [], poSessions: [], ledgerEntries: [], environment: 'unavailable',
+    });
+    updateSyncStatus(false);
+    showToast('Data belum bisa disinkronkan. Periksa koneksi lalu muat ulang.', 'warning');
+    console.warn('Server sync gagal:', error.message);
+  } finally {
     hideLoading();
-    return;
-  } catch (e) {
-    const cached = localStorage.getItem('kopiManagerV2Cache');
-    if (cached) state = JSON.parse(cached);
-    if (state && Object.keys(state).length > 0) {
-      updateSyncStatus(false);
-      console.warn('Server sync gagal, memakai cache read-only:', e.message);
-    } else {
-      state = getDefaultState();
-    }
   }
-
-  if (!state || Object.keys(state).length === 0) {
-    state = getDefaultState();
-    saveState();
-  }
-  hideLoading();
 }
 
 function updateSyncStatus(connected) {
   const el = document.getElementById('syncStatus');
   if (!el) return;
   if (connected === true) {
-    el.textContent = 'Tersimpan';
+    el.textContent = 'Data tersinkron';
+    el.dataset.status = 'online';
   } else if (connected === false) {
-    el.textContent = 'Offline';
+    el.textContent = 'Sinkronisasi terputus · data terakhir';
+    el.dataset.status = 'offline';
   } else {
     el.textContent = '';
   }
@@ -1426,7 +1428,9 @@ function renderPo() {
   const active = getActivePo(openSessions);
   const activeOrders = poOrders.filter(order => order.po_session_id === active?.id && !['CANCELLED','REJECTED','FULFILLED'].includes(order.status));
 
+  const selectedProduct = document.getElementById('orderProduct').value;
   document.getElementById('orderProduct').innerHTML = products.map(product => `<option value="${product.id}">${safeText(product.nama)} · ${rp(product.harga)}</option>`).join('');
+  if (products.some(product => product.id === selectedProduct)) document.getElementById('orderProduct').value = selectedProduct;
   renderPoActivePanel(openSessions, sessions);
   renderPoActiveOrdersPanel(openSessions, poOrders);
   const poSummary = active?.summary || null;
@@ -1462,12 +1466,17 @@ function renderPo() {
 async function runV2Mutation(loadingText, work, successText) {
   if (v2MutationInFlight) return false;
   v2MutationInFlight = true;
-  showToast(loadingText.replace('...', ''), 'info');
+  showLoading(loadingText);
   try {
     const result = await work();
-    showToast(successText);
-    await refreshV2();
-    renderPage(activePage);
+    try {
+      await refreshV2();
+      renderPage(activePage);
+      showToast(successText);
+    } catch {
+      updateSyncStatus(false);
+      showToast('Transaksi sudah tersimpan, tetapi tampilan belum sinkron. Muat ulang untuk melihat data terbaru.', 'warning');
+    }
     if (Array.isArray(result?.warnings) && result.warnings.length) {
       showToast(`Restock warning: ${result.warnings[0]}`, 'warning');
     }
@@ -1589,6 +1598,17 @@ function getFocusableElements(container) {
 }
 
 document.addEventListener('keydown', event => {
+  const tab = event.target.closest?.('[role="tab"]');
+  if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+    const tabs = [...document.querySelectorAll('.tab-btn')];
+    const index = tabs.indexOf(tab);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    tabs[next].click();
+    tabs[next].focus();
+    return;
+  }
   const openModalBackdrop = document.querySelector('.modal-backdrop.open');
   if (event.key === 'Escape') {
     if (openModalBackdrop) {
@@ -1647,11 +1667,7 @@ function renderDashboard() {
   const margin = omzetHari>0 ? Math.round(untungHari/omzetHari*100) : 0;
 
   // Bulan ini
-  const nm = new Date().getMonth(); const ny = new Date().getFullYear();
-  const bulanIni = state.penjualan.filter(p=>{
-    const d = new Date(p.tanggal);
-    return d.getMonth()===nm && d.getFullYear()===ny;
-  });
+  const bulanIni = state.penjualan.filter(p => p.tanggal.startsWith(todayStr.slice(0, 7)));
   const untungBulan = bulanIni.reduce((s,p)=>s+(p.totalHarga-p.modal),0);
 
   document.getElementById('dashOmzet').textContent = rp(omzetHari);
@@ -1687,7 +1703,7 @@ function renderDashboard() {
 
   // Stok summary
   document.getElementById('stokSummary').innerHTML = state.bahan.slice(0,6).map(b=>{
-    const pct = Math.min(100, b.stok / (b.threshold*3) * 100);
+    const pct = b.threshold > 0 ? Math.max(0, Math.min(100, b.stok / (b.threshold*3) * 100)) : (b.stok > 0 ? 100 : 0);
     const cls = pct>50?'bar-hijau':pct>25?'bar-kuning':'bar-merah';
     return `<div style="margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;font-size:12px">
@@ -1702,8 +1718,7 @@ function renderDashboard() {
   state.menu.forEach(m=>datasets[m.id]={label:m.nama.split(' ').slice(0,2).join(' '),data:[],color:''});
   const colors=['#2D5A27','#8B5E3C','#4A7C42','#C9863A'];
   for(let i=6;i>=0;i--) {
-    const d=new Date(); d.setDate(d.getDate()-i);
-    const ds=d.toISOString().split('T')[0];
+    const ds = addIsoDateDays(todayStr, -i);
     labels.push(formatDateShort(ds));
     state.menu.forEach(m=>{
       const cnt=state.penjualan.filter(p=>p.tanggal===ds&&p.menuId===m.id).length;
@@ -1718,6 +1733,12 @@ function renderDashboard() {
     borderWidth:1.5, borderRadius:3
   }));
 
+  if (typeof Chart === 'undefined') {
+    if (!document.getElementById('chartDashboard')) return;
+    document.getElementById('chartDashboard').parentElement.innerHTML = '<p class="empty-state">Grafik belum tersedia. Detail penjualan tetap bisa dilihat di Riwayat Penjualan.</p>';
+    return;
+  }
+  if (!document.getElementById('chartDashboard')) return;
   if(dashChart) dashChart.destroy();
   dashChart = new Chart(document.getElementById('chartDashboard'), {
     type:'bar',
@@ -1731,6 +1752,20 @@ function renderDashboard() {
 }
 
 let v2MutationInFlight = false;
+let v2RefreshInFlight = false;
+async function autoRefreshV2() {
+  if (document.hidden || !getToken() || v2MutationInFlight || v2RefreshInFlight) return;
+  if (document.querySelector('.modal-backdrop.open') || document.activeElement?.matches('input, select, textarea')) return;
+  v2RefreshInFlight = true;
+  try {
+    await refreshV2();
+    if (!v2MutationInFlight && !document.querySelector('.modal-backdrop.open') && !document.activeElement?.matches('input, select, textarea')) renderPage(activePage);
+  } catch {
+    updateSyncStatus(false);
+  } finally {
+    v2RefreshInFlight = false;
+  }
+}
 async function refreshV2() {
   const previousState = state || {};
   // Selalu ambil snapshot penuh setelah mutation. Partial PO refresh pernah
@@ -1741,6 +1776,7 @@ async function refreshV2() {
   const savedReports = previousState?.laporanList || [];
   state.laporanList = savedReports;
   localStorage.setItem('kopiManagerV2Cache', JSON.stringify(state));
+  updateSyncStatus(true);
 }
 
 // ============= RIWAYAT =============
@@ -1791,7 +1827,7 @@ function showDetail(id) {
   riwayatDetailId = id;
   const p = state.penjualan.find(x=>x.id===id);
   if(!p) return;
-  const modal = hitungModalMenu(getMenu(p.menuId)) * p.jumlah;
+  const modal = Number(p.modal ?? hitungModalMenu(getMenu(p.menuId)) * p.jumlah);
   document.getElementById('modalDetailContent').innerHTML = `
     <div style="font-size:13px;line-height:2">
       <div style="display:flex;justify-content:space-between"><span>Customer</span><strong>${safeText(p.customer)}</strong></div>
@@ -1853,10 +1889,11 @@ async function hapusPenjualan() {
 // ============= KALKULATOR =============
 function renderKalkulator() {
   const container = document.getElementById('kalcInputs');
+  const quantities = Object.fromEntries(state.menu.map(m => [m.id, Math.max(0, Number(document.getElementById('kalc_'+m.id)?.value) || 0)]));
   container.innerHTML = state.menu.map(m=>`
     <div class="resep-row">
       <div class="resep-nama">${safeText(m.nama)}</div>
-      <input type="number" class="resep-input" id="kalc_${m.id}" value="0" min="0" placeholder="cup">
+      <input type="number" class="resep-input" id="kalc_${m.id}" aria-label="Jumlah cup ${safeText(m.nama)}" value="${quantities[m.id]}" min="0" step="1" placeholder="cup">
     </div>`).join('');
 }
 
@@ -1910,7 +1947,7 @@ function hitungKalkulator() {
 function renderStok() {
   const container = document.getElementById('stokList');
   container.innerHTML = state.bahan.map(b=>{
-    const pct = Math.min(100, b.stok / (b.threshold*3) * 100);
+    const pct = b.threshold > 0 ? Math.max(0, Math.min(100, b.stok / (b.threshold*3) * 100)) : (b.stok > 0 ? 100 : 0);
     const cls = pct>50?'bar-hijau':pct>25?'bar-kuning':'bar-merah';
     const status = b.stok < b.threshold ? '<span class="badge badge-merah">Menipis</span>' : '<span class="badge badge-hijau">Aman</span>';
 
@@ -2043,11 +2080,11 @@ async function simpanEditBahan() {
   if (state.isV2) {
     if (!ensureSyncedV2Entity(id, 'Bahan')) return;
     const threshold = isNaN(thresholdBaru) ? b.threshold : thresholdBaru;
-    await runV2Mutation('Menyimpan stok...', () => window.kopsusrenServices.updateIngredient({
+    const ok = await runV2Mutation('Menyimpan stok...', () => window.kopsusrenServices.updateIngredient({
       ingredientId: id, physicalStock: stokBaru, threshold,
       reason: 'Stock opname dari halaman Stok & Bahan Baku',
     }), `${b.nama} berhasil diperbarui`);
-    closeModal('modalBahan'); renderStok();
+    if (ok) { closeModal('modalBahan'); renderStok(); }
     return;
   }
 
@@ -2138,8 +2175,8 @@ async function simpanEditResep() {
       return { ingredientId: r.bahanId, quantity: Number(el?.value) };
     }).filter(item => Number.isFinite(item.quantity) && item.quantity > 0);
     if (!items.length) { showToast('Resep minimal punya satu bahan','error'); return; }
-    await runV2Mutation('Menyimpan resep...', () => window.kopsusrenServices.updateProductRecipe({ productId:id, price, items }), 'Resep dan harga berhasil diperbarui');
-    closeModal('modalResep'); renderResep();
+    const ok = await runV2Mutation('Menyimpan resep...', () => window.kopsusrenServices.updateProductRecipe({ productId:id, price, items }), 'Resep dan harga berhasil diperbarui');
+    if (ok) { closeModal('modalResep'); renderResep(); }
     return;
   }
   m.harga = parseFloat(document.getElementById('editResepHarga').value)||m.harga;
@@ -2157,7 +2194,7 @@ async function simpanEditResep() {
 function renderCashOverview() {
   document.getElementById('saldoKasDisplay').textContent = rp(state.saldoKas);
 
-  const mutasi = state.mutasiKas.slice().reverse().slice(0,30);
+  const mutasi = state.mutasiKas.slice().sort((a,b) => String(b.createdAt || b.tanggal+'T'+b.waktu).localeCompare(String(a.createdAt || a.tanggal+'T'+a.waktu))).slice(0,30);
   const container = document.getElementById('kasMutasiList');
   document.getElementById('mutasiCount').textContent = state.mutasiKas.length + ' transaksi';
 
@@ -2185,16 +2222,20 @@ function renderPengeluaran() {
   renderCashOverview();
   // Fill bahan dropdown
   const sel = document.getElementById('belBahan');
+  const selectedIngredient = sel.value;
   sel.innerHTML = state.bahan.map(b => `<option value="${b.id}">${safeText(b.nama)} (${safeText(b.satuan)})</option>`).join('');
+  if (state.bahan.some(b => b.id === selectedIngredient)) sel.value = selectedIngredient;
   const accountSelect = document.getElementById('belAccount');
   if (accountSelect) {
+    const selectedAccount = accountSelect.value;
     accountSelect.innerHTML = (state.accounts || []).filter(a => a.type !== 'QRIS').map(a =>
       `<option value="${a.id}">${safeText(a.name)} · ${rp(a.balance)}</option>`
     ).join('');
+    if ((state.accounts || []).some(a => a.id === selectedAccount && a.type !== 'QRIS')) accountSelect.value = selectedAccount;
   }
 
   // List riwayat pengeluaran
-  const items = state.pengeluaranList.slice().reverse().slice(0, 30);
+  const items = state.pengeluaranList.slice().sort((a,b) => String(b.createdAt || b.tanggal).localeCompare(String(a.createdAt || a.tanggal))).slice(0, 30);
   const container = document.getElementById('pengeluaranList');
   if (!items.length) {
     container.innerHTML = '<div class="empty-state"><strong>Belum ada catatan transaksi</strong><span>Gunakan salah satu form di atas untuk mencatat transaksi pertama.</span></div>';
@@ -2246,26 +2287,16 @@ async function simpanBelanjaB() {
     const accountId = document.getElementById('belAccount').value;
     if (!accountId) { showToast('Pilih akun pembayaran', 'error'); return; }
     if (!ensureSyncedV2Entity(bahanId, 'Bahan')) return;
-    if (v2MutationInFlight) return;
-    v2MutationInFlight = true;
-    showLoading('Mencatat pembelian...');
-    try {
-      await window.kopsusrenServices.recordPurchase({
-        supplier: 'Manual', accountId, ingredientId: bahanId,
-        quantity: jumlah, totalCost: totalHarga, source: 'MANUAL',
-        notes: ket || null, idempotencyKey: crypto.randomUUID(),
-      });
-      await refreshV2();
+    const ok = await runV2Mutation('Mencatat pembelian...', () => window.kopsusrenServices.recordPurchase({
+      supplier: 'Manual', accountId, ingredientId: bahanId,
+      quantity: jumlah, totalCost: totalHarga, source: 'MANUAL',
+      notes: ket || null, idempotencyKey: crypto.randomUUID(),
+    }), `${b.nama}: stok dan saldo akun berhasil diperbarui`);
+    if (ok) {
       document.getElementById('belJumlah').value = '';
       document.getElementById('belHarga').value = '';
       document.getElementById('belKeterangan').value = '';
-      renderPengeluaran(); renderStok(); renderDashboard();
-      showToast(`${b.nama}: stok dan saldo akun berhasil diperbarui`);
-    } catch (error) {
-      showToast(error.message, 'error');
-    } finally {
-      v2MutationInFlight = false;
-      hideLoading();
+      updatePreviewHarga();
     }
     return;
   }
@@ -2416,7 +2447,7 @@ async function simpanPengeluaran() {
 // ============= LAPORAN =============
 function renderLaporan() {
   const today2 = today();
-  document.getElementById('laporanTanggal').value = today2;
+  if (!document.getElementById('laporanTanggal').value) document.getElementById('laporanTanggal').value = today2;
   const container = document.getElementById('laporanSavedList');
   if(!state.laporanList||!state.laporanList.length) {
     container.innerHTML='<div class="empty-state"><strong>Belum ada laporan tersimpan</strong><span>Pilih tanggal, lalu generate laporan untuk menyimpannya di sini.</span></div>';
@@ -2467,6 +2498,8 @@ function generateLaporan(tgl) {
     const m=getMenu(p.menuId);
     if(!m) return;
     m.resep.forEach(r=>{
+      const ingredient = getBahan(r.bahanId);
+      if (p.noIce && (ingredient?.code === 'ICE' || r.bahanId === 'es')) return;
       if(!bahanTerpakai[r.bahanId]) bahanTerpakai[r.bahanId]=0;
       bahanTerpakai[r.bahanId]+=r.jumlah*p.jumlah;
     });
@@ -2507,10 +2540,11 @@ footer{margin-top:30px;padding-top:10px;border-top:1px solid #D0C4B0;color:#888;
 
 <div class="summary-box">
 <div class="sum-item"><div class="sum-label">Total Omzet</div><div class="sum-val hijau">${rp(omzet)}</div></div>
-<div class="sum-item"><div class="sum-label">Total Modal</div><div class="sum-val">${rp(modal)}</div></div>
-<div class="sum-item"><div class="sum-label">Keuntungan</div><div class="sum-val hijau">${rp(untung)}</div></div>
+<div class="sum-item"><div class="sum-label">Estimasi Modal</div><div class="sum-val">${rp(modal)}</div></div>
+<div class="sum-item"><div class="sum-label">Estimasi Keuntungan</div><div class="sum-val hijau">${rp(untung)}</div></div>
 </div>
 
+<p>Modal dan keuntungan adalah estimasi berdasarkan resep dan HPP saat ini.</p>
 <h2>Daftar Penjualan</h2>
 <table>
 <thead><tr><th>No</th><th>Customer</th><th>Kelas</th><th>Menu</th><th>Harga</th><th>Metode</th><th>Ket</th></tr></thead>
@@ -2529,9 +2563,10 @@ ${penjHari.map((p,i)=>`<tr>
 ${Object.values(perMenu).filter(m=>m.cup>0).map(m=>`<tr><td>${safeText(m.nama)}</td><td>${m.cup} cup</td><td>${rp(m.omzet)}</td></tr>`).join('')}
 </tbody></table>
 
-<h2>Bahan Terpakai</h2>
+<h2>Estimasi Bahan Terpakai</h2>
+<p>Menggunakan resep saat laporan dibuat; pesanan tanpa es tidak menghitung es.</p>
 <table>
-<thead><tr><th>Bahan</th><th>Terpakai</th><th>Stok Akhir</th></tr></thead>
+<thead><tr><th>Bahan</th><th>Terpakai</th><th>Stok Saat Laporan Dibuat</th></tr></thead>
 <tbody>
 ${Object.entries(bahanTerpakai).map(([bid,jml])=>{
   const b=getBahan(bid);
@@ -2544,13 +2579,13 @@ ${Object.entries(bahanTerpakai).map(([bid,jml])=>{
 <table>
 <thead><tr><th>Item</th><th>Nilai</th></tr></thead>
 <tbody>
-<tr><td>Saldo Kas Akhir Hari</td><td><strong>${rp(state.saldoKas)}</strong></td></tr>
+<tr><td>Saldo Kas Saat Laporan Dibuat</td><td><strong>${rp(state.saldoKas)}</strong></td></tr>
 ${totalTips>0?`<tr><td>Total Tips</td><td>${rp(totalTips)}</td></tr>`:''}
 </tbody></table>
 
-<h2>Stok Akhir Semua Bahan</h2>
+<h2>Stok Saat Laporan Dibuat</h2>
 <table>
-<thead><tr><th>Bahan</th><th>Stok Akhir</th><th>Satuan</th><th>Status</th></tr></thead>
+<thead><tr><th>Bahan</th><th>Stok Saat Laporan Dibuat</th><th>Satuan</th><th>Status</th></tr></thead>
 <tbody>
 ${state.bahan.map(b=>`<tr>
 <td>${safeText(b.nama)}</td><td>${Number(b.stok)}</td><td>${safeText(b.satuan)}</td>
@@ -2576,15 +2611,14 @@ ${state.bahan.map(b=>`<tr>
   // Simpan referensi laporan
   if(!state.laporanList) state.laporanList=[];
   const existing = state.laporanList.find(l=>l.tanggal===tglTarget);
-  if(!existing) {
-    state.laporanList.push({
-      id:Date.now().toString(),
-      tanggal:tglTarget, fileName, folder:folderName,
-      omzet, modal, untung,
-      htmlContent
-    });
-    saveState();
-  }
+  const report = {
+    id: existing?.id || Date.now().toString(),
+    tanggal: tglTarget, fileName, folder: folderName,
+    omzet, modal, untung, htmlContent,
+  };
+  if (existing) Object.assign(existing, report);
+  else state.laporanList.push(report);
+  saveState();
 
   renderLaporan();
   showToast(`Laporan ${fileName} berhasil didownload!`);
@@ -2682,7 +2716,8 @@ async function exportKasCSV() {
     try {
       const result = await window.kopsusrenServices.exportHistory('cash');
       mutasi = result.rows.map(entry => ({
-        tanggal: new Date(entry.created_at).toLocaleDateString('en-CA'),
+        createdAt: entry.created_at,
+      tanggal: new Date(entry.created_at).toLocaleDateString('en-CA'),
         jenis: Number(entry.amount) >= 0 ? 'masuk' : 'keluar',
         jumlah: Math.abs(Number(entry.amount)),
         keterangan: entry.description,
@@ -2716,7 +2751,8 @@ async function exportPenjualanCSV() {
     try {
       const result = await window.kopsusrenServices.exportHistory('sales');
       sorted = result.rows.map(entry => ({
-        tanggal: new Date(entry.created_at).toLocaleDateString('en-CA'),
+        createdAt: entry.created_at,
+      tanggal: new Date(entry.created_at).toLocaleDateString('en-CA'),
         customer: entry.customer_name,
         kelas: entry.class_name,
         menuNama: entry.product_name,
@@ -2822,13 +2858,7 @@ async function initApp() {
   renderPo();
   initSwipe();
   if (!window.baristackRefreshTimer) {
-    window.baristackRefreshTimer = setInterval(async () => {
-      if (document.hidden || !getToken()) return;
-      try {
-        await refreshV2();
-        renderPage(activePage);
-      } catch { /* koneksi berikutnya akan mencoba lagi */ }
-    }, 20000);
+    window.baristackRefreshTimer = setInterval(autoRefreshV2, 20000);
   }
 }
 
