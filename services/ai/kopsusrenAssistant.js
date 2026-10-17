@@ -1,25 +1,10 @@
+import {aiConfig,chatCompletion} from './provider.js';
 import { KOPSUSREN_KNOWLEDGE } from './kopsusrenKnowledge.js';
 
-const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
-const DEFAULT_MODEL = 'openai/gpt-oss-120b';
-
 async function callGroq(messages, temperature = 0.35) {
-  if (!process.env.GROQ_API_KEY) return null;
-  const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: process.env.GROQ_MODEL || DEFAULT_MODEL,
-      temperature,
-      max_tokens: 350,
-      messages,
-    }),
-  });
-  if (!response.ok) throw new Error(`Groq assistant gagal (${response.status})`);
-  const data = await response.json();
+  const config=aiConfig();
+  if (!config.key) return null;
+  const data=await chatCompletion({model:config.model,temperature,max_tokens:350,messages});
   const text = data?.choices?.[0]?.message?.content;
   return typeof text === 'string' && text.trim() ? text.trim().slice(0, 1600) : null;
 }

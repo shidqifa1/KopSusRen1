@@ -1,6 +1,6 @@
+import {aiConfig,requestChatCompletion} from '../ai/provider.js';
 import { applyStructuredPatch, deterministicCustomerTurn, draftItemsForRpc, missingFields, resolveProductQuery, sanitizeCustomerParsedResult } from '../chatbot/conversation.js';
 
-const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const DEFAULT_MODEL = 'openai/gpt-oss-120b';
 
 export class ParserProviderError extends Error {
@@ -304,7 +304,7 @@ function groundCustomerOutput(parsed,{text,currentOrder={},menu=[]}) {
 }
 
 export function groqEnabled() {
-  return Boolean(process.env.GROQ_API_KEY);
+  return Boolean(aiConfig().key);
 }
 
 function compactConversationState(role,state={}) {
@@ -412,8 +412,9 @@ function normalizedEvaluationPolicy(value) {
 }
 
 export async function parseWithGroq({ text, currentOrder, menu, role = 'CUSTOMER', pendingQuestion = null, history = [], evaluationPolicy = null }) {
-  if (!process.env.GROQ_API_KEY) return null;
-  const configuredModel=process.env.GROQ_MODEL||DEFAULT_MODEL;
+  if (!aiConfig().key) return null;
+  const config=aiConfig();
+  const configuredModel=config.model;
   const liveMenu = (menu || []).map(product => ({
     id: product.id, code: product.code, name: product.name, price: Number(product.price),
     aliases: product.chatbot_metadata?.aliases || [], tags: product.chatbot_metadata?.tags || [],
@@ -468,10 +469,7 @@ export async function parseWithGroq({ text, currentOrder, menu, role = 'CUSTOMER
     attempts.push(entry);
     let response;
     try {
-      response=await fetch(`${GROQ_BASE_URL}/chat/completions`,{
-        method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${process.env.GROQ_API_KEY}`},
-        body:JSON.stringify(requestBody),signal:AbortSignal.timeout(7000),
-      });
+      response=await requestChatCompletion(requestBody,{signal:AbortSignal.timeout(7000)});
     } catch(error) {
       entry.latencyMs=performance.now()-started;
       entry.errorCategory=/timeout|aborted/i.test(String(error?.name||error?.message||''))?'TIMEOUT':'NETWORK_ERROR';
@@ -524,7 +522,7 @@ export async function parseWithGroq({ text, currentOrder, menu, role = 'CUSTOMER
     entry.errorCategory=invalidCategory;
     if (invalidCategory) {
       if (customer&&validationRetries>=1) return fallback();
-      const switchModel=evalPolicy&&response.status===400&&!usedFallback&&modelUsed!==evalPolicy.fallbackModel;
+      const switchModel=config.provider==='groq'&&evalPolicy&&response.status===400&&!usedFallback&&modelUsed!==evalPolicy.fallbackModel;
       if (customer||switchModel) {
         validationRetries+=1;
         if (switchModel) {

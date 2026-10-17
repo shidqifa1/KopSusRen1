@@ -686,7 +686,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         break;
       case "update_ingredient": {
         const ingredientId = await resolveIngredientId(payload.ingredientId);
-        rows = await sql`select update_ingredient(${ingredientId}, ${payload.physicalStock}, ${payload.threshold}, ${payload.reason}) as id`;
+        if (payload.costOnly === true) {
+          const automatic = payload.usePurchaseCost === true;
+          const packagePrice = automatic ? null : Number(payload.packagePrice);
+          const packageQuantity = automatic ? null : Number(payload.packageQuantity);
+          if (!automatic && (
+            [payload.packagePrice, payload.packageQuantity].some(value => !['number','string'].includes(typeof value) || String(value).trim() === '')
+            || !Number.isFinite(packagePrice) || packagePrice < 0
+            || !Number.isFinite(packageQuantity) || packageQuantity <= 0
+          )) throw new Error('Isi harga kemasan minimal 0 dan isi kemasan lebih dari 0');
+          rows = await sql.begin(async db => {
+            const before = await db`select cost_pack_price, cost_pack_quantity from ingredients where id=${ingredientId} and is_active for update`;
+            if (!before.length) throw new Error('Bahan tidak ditemukan atau tidak aktif');
+            const updated = await db`update ingredients set cost_pack_price=${packagePrice}, cost_pack_quantity=${packageQuantity}, updated_at=now() where id=${ingredientId} returning id`;
+            await db`insert into audit_logs(event_type,entity_type,entity_id,payload)
+              values('INGREDIENT_COST_UPDATED','ingredient',${ingredientId},${sql.json({
+                before: before[0], packagePrice, packageQuantity, source: automatic ? 'PURCHASE_AVERAGE' : 'MANUAL',
+              })})`;
+            return updated;
+          });
+        } else {
+          rows = await sql`select update_ingredient(${ingredientId}, ${payload.physicalStock}, ${payload.threshold}, ${payload.reason}) as id`;
+        }
         break;
       }
       case "update_product_recipe": {
@@ -711,12 +732,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })));
         if (prepared.some(row=>!Number.isFinite(row.unitPrice)||row.unitPrice<0)) throw new Error('Harga penjualan tidak valid');
         const result=await sql.begin(async db => {
-          const ids=[];
-          for (const row of prepared) {
-            const value=await db`select import_historical_sale(${row.customerName},${row.className},${row.productId},${row.unitPrice},${row.paymentMethod},${row.notes},${row.occurredAt},${row.key}) id`;
-            ids.push(value[0].id);
-          }
-          return ids;
+          const values=await db`
+            select import_historical_sale(
+              item->>'customerName', item->>'className', (item->>'productId')::uuid,
+              (item->>'unitPrice')::numeric, item->>'paymentMethod', item->>'notes',
+              (item->>'occurredAt')::timestamptz, item->>'key'
+            ) id
+            from jsonb_array_elements(${sql.json(prepared)}::jsonb) with ordinality as batch(item, position)
+            order by position`;
+          return values.map(row => row.id);
         });
         return res.status(200).json({ok:true,imported:result.length,ids:result});
       }
@@ -732,12 +756,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }));
         if (prepared.some(row=>!Number.isFinite(row.amount)||row.amount===0)) throw new Error('Jumlah mutasi kas tidak valid');
         const result=await sql.begin(async db => {
-          const ids=[];
-          for (const row of prepared) {
-            const value=await db`select import_cash_entry(${cashRows[0].id},${row.amount},${row.description},${row.occurredAt},${row.referenceId}) id`;
-            ids.push(value[0].id);
-          }
-          return ids;
+          const values=await db`
+            select import_cash_entry(
+              ${cashRows[0].id}::uuid, (item->>'amount')::numeric, item->>'description',
+              (item->>'occurredAt')::timestamptz, (item->>'referenceId')::uuid
+            ) id
+            from jsonb_array_elements(${sql.json(prepared)}::jsonb) with ordinality as batch(item, position)
+            order by position`;
+          return values.map(row => row.id);
         });
         return res.status(200).json({ok:true,imported:result.length,ids:result});
       }
