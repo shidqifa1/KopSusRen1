@@ -15,7 +15,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                  physical_stock::float8 as physical_stock,
                  reserved_stock::float8 as reserved_stock,
                  available_stock::float8 as available_stock,
-                 average_cost::float8 as average_cost
+                 average_cost::float8 as average_cost,
+                 cost_pack_price::float8 as cost_pack_price,
+                 cost_pack_quantity::float8 as cost_pack_quantity
           from inventory_stock order by name`,
     ]);
     const [orders, movements] = await Promise.all([

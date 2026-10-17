@@ -686,7 +686,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         break;
       case "update_ingredient": {
         const ingredientId = await resolveIngredientId(payload.ingredientId);
-        rows = await sql`select update_ingredient(${ingredientId}, ${payload.physicalStock}, ${payload.threshold}, ${payload.reason}) as id`;
+        if (payload.costOnly === true) {
+          const automatic = payload.usePurchaseCost === true;
+          const packagePrice = automatic ? null : Number(payload.packagePrice);
+          const packageQuantity = automatic ? null : Number(payload.packageQuantity);
+          if (!automatic && (
+            [payload.packagePrice, payload.packageQuantity].some(value => !['number','string'].includes(typeof value) || String(value).trim() === '')
+            || !Number.isFinite(packagePrice) || packagePrice < 0
+            || !Number.isFinite(packageQuantity) || packageQuantity <= 0
+          )) throw new Error('Isi harga kemasan minimal 0 dan isi kemasan lebih dari 0');
+          rows = await sql.begin(async db => {
+            const before = await db`select cost_pack_price, cost_pack_quantity from ingredients where id=${ingredientId} and is_active for update`;
+            if (!before.length) throw new Error('Bahan tidak ditemukan atau tidak aktif');
+            const updated = await db`update ingredients set cost_pack_price=${packagePrice}, cost_pack_quantity=${packageQuantity}, updated_at=now() where id=${ingredientId} returning id`;
+            await db`insert into audit_logs(event_type,entity_type,entity_id,payload)
+              values('INGREDIENT_COST_UPDATED','ingredient',${ingredientId},${sql.json({
+                before: before[0], packagePrice, packageQuantity, source: automatic ? 'PURCHASE_AVERAGE' : 'MANUAL',
+              })})`;
+            return updated;
+          });
+        } else {
+          rows = await sql`select update_ingredient(${ingredientId}, ${payload.physicalStock}, ${payload.threshold}, ${payload.reason}) as id`;
+        }
         break;
       }
       case "update_product_recipe": {

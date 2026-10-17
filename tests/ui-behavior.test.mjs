@@ -208,3 +208,59 @@ test('cash import sends one batch and retains signed amounts and references',asy
   assert.deepEqual(batch.map(row=>row.amount),[5000,-1000]);
   assert.equal(batch[1].referenceId,`csv-cash:${'a'.repeat(64)}:1`);
 });
+
+test('V2 ingredient editor exposes separate package-cost controls',()=>{
+  const {context,node}=appHarness();
+  context.openModal=()=>{};
+  context.editBahan('susu');
+  assert.notEqual(node('editBahanPriceFields').style.display,'none');
+  assert.match(html,/id="saveIngredientCostBtn"[^>]*onclick="simpanHargaBahan\(\)"/);
+});
+test('saving HPP sends only package cost, never physical stock or a purchase',async()=>{
+  const {context,node}=appHarness();
+  let sent;
+  context.crypto={randomUUID:()=> 'unused'};
+  vm.runInContext("ensureSyncedV2Entity=()=>true;runV2Mutation=async(text,work)=>{await work();return true;};",context);
+  context.window.kopsusrenServices={updateIngredient:async payload=>{sent=payload;}};
+  context.editBahan=()=>{};
+  node('editBahanId').value='susu';node('editBahanHargaKemasan').value='270000';node('editBahanIsiKemasan').value='12000';
+  await context.simpanHargaBahan();
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)),{ingredientId:'susu',costOnly:true,packagePrice:270000,packageQuantity:12000});
+});
+async function costCommand(payload) {
+  const start=commands.indexOf('case "update_ingredient": {');
+  const end=commands.indexOf('\n      case ',start+1);
+  const body=commands.slice(start,end);
+  const calls=[];
+  const sql=async(parts,...values)=>{const query=parts.join('?');calls.push({query,values});return [{id:'ingredient',cost_pack_price:null,cost_pack_quantity:null}];};
+  sql.begin=async fn=>fn(sql);sql.json=v=>({json:v});
+  const context=vm.createContext({payload,sql,resolveIngredientId:async()=> 'ingredient'});
+  const script=ts.transpile(`(async()=>{let rows;switch('update_ingredient'){${body}}return rows;})()`,{target:ts.ScriptTarget.ES2022});
+  await vm.runInContext(script,context);
+  return calls;
+}
+test('cost-only ingredient command updates cost and audit without stock or cash writes',async()=>{
+  const calls=await costCommand({ingredientId:'ingredient',costOnly:true,packagePrice:270000,packageQuantity:12000});
+  assert.ok(calls.some(call=>/update ingredients/.test(call.query)&&/cost_pack_price/.test(call.query)));
+  assert.ok(calls.some(call=>/audit_logs/.test(call.query)));
+  assert.doesNotMatch(calls.map(call=>call.query).join('\n'),/update_ingredient\(|inventory_movements|ledger_entries|purchase_items/);
+});
+test('cost-only ingredient command rejects invalid or partial values before writing',async()=>{
+  for(const [packagePrice,packageQuantity] of [[-1,1000],[100,0],[100,-1],['',1000],[100,''],[Infinity,1000]]) {
+    await assert.rejects(()=>costCommand({ingredientId:'ingredient',costOnly:true,packagePrice,packageQuantity}));
+  }
+});
+test('package prices survive bootstrap conversion with the correct unit cost',()=>{
+  const {context}=appHarness();
+  const state=context.legacyStateFromV2({ingredients:[{id:'milk',name:'Susu',unit:'ml',average_cost:22.5,cost_pack_price:270000,cost_pack_quantity:12000}],products:[],recipes:[],orders:[],accounts:[],purchases:[],poSessions:[]});
+  assert.equal(state.bahan[0].hargaBeli,22.5);
+  assert.equal(state.bahan[0].hargaKemasan,270000);
+  assert.equal(state.bahan[0].isiKemasan,12000);
+  assert.equal(state.bahan[0].hasManualCost,true);
+});
+test('returning to purchase-based HPP clears both manual cost fields',async()=>{
+  const calls=await costCommand({ingredientId:'ingredient',costOnly:true,usePurchaseCost:true});
+  const update=calls.find(call=>/update ingredients/.test(call.query));
+  assert.equal(update.values[0],null);
+  assert.equal(update.values[1],null);
+});
