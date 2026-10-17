@@ -263,33 +263,41 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   </details>
 
   <div class="tabs" role="tablist" aria-label="Jenis transaksi">
-    <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-belanjaBahan" onclick="switchTab('belanjaBahan')">Belanja Bahan</button>
-    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-pemasukanLain" tabindex="-1" onclick="switchTab('pemasukanLain')">Pemasukan Lain</button>
-    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-pengeluaranLain" tabindex="-1" onclick="switchTab('pengeluaranLain')">Pengeluaran Lain</button>
+    <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="tab-belanjaBahan" onclick="switchTab('belanjaBahan')">Pengeluaran</button>
+    <button class="tab-btn" role="tab" aria-selected="false" aria-controls="tab-pemasukanLain" tabindex="-1" onclick="switchTab('pemasukanLain')">Pemasukan</button>
   </div>
 
   <!-- BELANJA BAHAN -->
   <div id="tab-belanjaBahan" class="card" role="tabpanel">
-    <div class="card-title">Catat Belanja Bahan</div>
+    <div class="card-title">Catat Pengeluaran</div>
+    <label for="expenseType">Jenis pengeluaran</label>
+    <select id="expenseType" onchange="updateExpenseType()">
+      <option value="MATERIAL">Pembelian bahan (tambah stok)</option>
+      <option value="OTHER">Biaya lainnya (saldo saja)</option>
+    </select>
+    <p id="expenseEffectHint" class="form-help" style="margin-top:8px">Sekali simpan: pengeluaran tercatat, saldo akun berkurang, dan stok bahan bertambah.</p>
+    <div id="expenseIngredientFields">
     <label for="belBahan">Pilih Bahan</label>
     <select id="belBahan"></select>
 
-    <label for="belJumlah">Jumlah Dibeli (dalam satuan bahan)</label>
-    <input type="number" id="belJumlah" placeholder="Contoh: 1000 gram, 2 pcs, 946 ml, dll" step="any">
+    <label id="belJumlahLabel" for="belJumlah">Jumlah dibeli (satuan bahan)</label>
+    <input type="number" id="belJumlah" min="0" placeholder="Contoh: 12000 ml untuk 12 kotak susu 1000 ml" step="any">
+    </div>
 
-    <label for="belHarga">Total Harga Beli (Rp)</label>
+    <label for="belHarga">Jumlah pengeluaran (Rp)</label>
     <input type="number" id="belHarga" placeholder="0">
     <label for="belAccount">Dibayar dari</label>
     <select id="belAccount"></select>
     <div id="previewHargaSatuan" style="background:var(--hijau4);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:var(--hijau);font-weight:600;">
-      Harga per satuan: <span id="previewHargaValue">Rp0,00</span> / <span id="previewSatuan">gram</span>
+      Harga pembelian per satuan: <span id="previewHargaValue">Rp0,00</span> / <span id="previewSatuan">gram</span>
+      <small id="expenseHppNote" class="form-help" style="margin-top:6px"></small>
     </div>
 
     <label for="belKeterangan">Keterangan (opsional)</label>
     <input type="text" id="belKeterangan" placeholder="Contoh: beli 2 kotak susu">
 
     <div class="btn-group">
-      <button class="btn btn-primary btn-full" onclick="simpanBelanjaB()">Simpan Belanja</button>
+      <button class="btn btn-primary btn-full" onclick="simpanPengeluaran()">Simpan Pengeluaran</button>
     </div>
   </div>
 
@@ -302,18 +310,6 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <input type="text" id="pmasKet" placeholder="Contoh: Tips, piutang lunas...">
     <div class="btn-group">
       <button class="btn btn-primary btn-full" onclick="simpanPemasukan()">Simpan Pemasukan</button>
-    </div>
-  </div>
-
-  <!-- PENGELUARAN LAIN -->
-  <div id="tab-pengeluaranLain" class="card" role="tabpanel" style="display:none">
-    <div class="card-title">Catat Pengeluaran Lain</div>
-    <label for="pengeJumlah">Jumlah (Rp)</label>
-    <input type="number" id="pengeJumlah" placeholder="0">
-    <label for="pengeKet">Keperluan / Keterangan</label>
-    <input type="text" id="pengeKet" placeholder="Contoh: Ambil untung, bayar utang...">
-    <div class="btn-group">
-      <button class="btn btn-primary btn-full" onclick="simpanPengeluaran()">Simpan Pengeluaran</button>
     </div>
   </div>
 
@@ -1644,11 +1640,11 @@ document.addEventListener('keydown', event => {
 });
 
 function switchTab(tabId) {
-  ['belanjaBahan','pemasukanLain','pengeluaranLain'].forEach(t=>{
+  ['belanjaBahan','pemasukanLain'].forEach(t=>{
     document.getElementById('tab-'+t).style.display = t===tabId?'block':'none';
   });
   document.querySelectorAll('.tab-btn').forEach((b,i)=>{
-    const active = ['belanjaBahan','pemasukanLain','pengeluaranLain'][i]===tabId;
+    const active = ['belanjaBahan','pemasukanLain'][i]===tabId;
     b.classList.toggle('active', active);
     b.setAttribute('aria-selected', String(active));
     b.setAttribute('tabindex', active ? '0' : '-1');
@@ -2282,6 +2278,19 @@ function renderPengeluaran() {
   if (belBahanSelect) belBahanSelect.addEventListener('change', updatePreviewHarga);
 
   // Trigger preview awal
+  updateExpenseType();
+}
+
+function updateExpenseType() {
+  const material = document.getElementById('expenseType').value === 'MATERIAL';
+  for (const id of ['expenseIngredientFields', 'previewHargaSatuan']) {
+    const element = document.getElementById(id);
+    element.hidden = !material;
+    element.classList.toggle('is-hidden', !material);
+  }
+  document.getElementById('expenseEffectHint').textContent = material
+    ? 'Sekali simpan: pengeluaran tercatat, saldo akun berkurang, dan stok bahan bertambah.'
+    : 'Pengeluaran hanya mengurangi saldo akun yang dipilih. Stok bahan tetap.';
   updatePreviewHarga();
 }
 
@@ -2291,7 +2300,7 @@ async function simpanBelanjaB() {
   const totalHarga = parseFloat(document.getElementById('belHarga').value) || 0;
   const ket = document.getElementById('belKeterangan').value.trim();
 
-  if (!bahanId || jumlah <= 0 || totalHarga <= 0) {
+  if (!bahanId || !Number.isFinite(jumlah) || jumlah <= 0 || !Number.isFinite(totalHarga) || totalHarga <= 0) {
     showToast('Isi semua field dengan benar!', 'error');
     return;
   }
@@ -2380,6 +2389,10 @@ function updatePreviewHarga() {
     if (b) satuan = b.satuan;
   }
   document.getElementById('previewSatuan').textContent = satuan;
+  document.getElementById('belJumlahLabel').textContent = `Jumlah dibeli (${satuan})`;
+  document.getElementById('expenseHppNote').textContent = getBahan(bahanId)?.hasManualCost
+    ? 'Bahan ini memakai HPP manual. Pembelian menambah stok; HPP manual tetap dipakai.'
+    : 'HPP pembelian dihitung otomatis dari catatan pembelian bahan.';
 
   if (jumlah > 0 && totalHarga > 0) {
     const hargaPerSatuan = totalHarga / jumlah;
@@ -2425,20 +2438,23 @@ async function simpanPemasukan() {
 }
 
 async function simpanPengeluaran() {
-  const jumlah = parseFloat(document.getElementById('pengeJumlah').value)||0;
-  const ket = document.getElementById('pengeKet').value.trim();
-  if(jumlah<=0) { showToast('Jumlah tidak valid!','error'); return; }
+  if (document.getElementById('expenseType').value === 'MATERIAL') return simpanBelanjaB();
+  const jumlah = Number(document.getElementById('belHarga').value);
+  const ket = document.getElementById('belKeterangan').value.trim();
+  if(!Number.isFinite(jumlah)||jumlah<=0) { showToast('Jumlah tidak valid!','error'); return; }
 
   if (state.isV2) {
-    const cash = state.accounts.find(account => account.type === 'CASH');
-    if (!cash) { showToast('Akun kas aktif tidak ditemukan','error'); return; }
-    if (Number(cash.balance||0)<jumlah&&!confirm('Saldo kas tidak mencukupi. Tetap catat pengeluaran?')) return;
+    const accountId = document.getElementById('belAccount').value;
+    const account = state.accounts.find(item => item.id === accountId && item.type !== 'QRIS');
+    if (!account) { showToast('Pilih akun pembayaran','error'); return; }
+    if (Number(account.balance||0)<jumlah&&!confirm('Saldo akun tidak mencukupi. Tetap catat pengeluaran?')) return;
     const ok = await runV2Mutation('Mencatat pengeluaran...', () => window.kopsusrenServices.adjustAccount({
-      accountId: cash.id, amount: -jumlah, reason: ket || 'Pengeluaran lain'
+      accountId: account.id, amount: -jumlah, reason: ket || 'Pengeluaran lain'
     }), 'Pengeluaran dicatat!');
     if (ok) {
-      document.getElementById('pengeJumlah').value='';
-      document.getElementById('pengeKet').value='';
+      document.getElementById('belHarga').value='';
+      document.getElementById('belKeterangan').value='';
+      updatePreviewHarga();
     }
     return;
   }
@@ -2454,8 +2470,8 @@ async function simpanPengeluaran() {
   });
 
   saveState();
-  document.getElementById('pengeJumlah').value='';
-  document.getElementById('pengeKet').value='';
+  document.getElementById('belHarga').value='';
+  document.getElementById('belKeterangan').value='';
   renderPengeluaran();
   showToast('Pengeluaran dicatat!');
 }

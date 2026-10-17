@@ -291,3 +291,46 @@ test('cash table is initially expanded and the duplicate expense list is removed
   assert.match(html,/<details class="card cash-history" open>/);
   assert.doesNotMatch(html,/id="pengeluaranList"|Riwayat Pengeluaran & Pemasukan/);
 });
+
+test('material expenses use exactly one purchase command and no separate cash adjustment',async()=>{
+  const {context,node}=appHarness();
+  const purchases=[],adjustments=[];
+  context.crypto={randomUUID:()=> 'purchase-draft'};
+  vm.runInContext("ensureSyncedV2Entity=()=>true;runV2Mutation=async(text,work)=>{await work();return true;};",context);
+  context.window.kopsusrenServices={recordPurchase:async p=>purchases.push(p),adjustAccount:async p=>adjustments.push(p)};
+  node('expenseType').value='MATERIAL';node('belBahan').value='susu';node('belJumlah').value='12000';
+  node('belHarga').value='270000';node('belAccount').value='cash';node('belKeterangan').value='Susu sekarton';
+  await context.simpanPengeluaran();
+  assert.equal(purchases.length,1);assert.equal(adjustments.length,0);
+  assert.equal(purchases[0].quantity,12000);assert.equal(purchases[0].totalCost,270000);
+  assert.equal(node('belHarga').value,'');assert.equal(node('belJumlah').value,'');
+});
+test('other expenses use the selected account without buying or changing ingredients',async()=>{
+  const {context,node}=appHarness();
+  const adjustments=[];
+  context.window.kopsusrenServices={recordPurchase:()=>assert.fail('must not buy stock'),adjustAccount:async p=>adjustments.push(p)};
+  vm.runInContext("state.accounts.push({id:'bank',type:'BANK',balance:100000});runV2Mutation=async(text,work)=>{await work();return true;};",context);
+  node('expenseType').value='OTHER';node('belHarga').value='5000';node('belAccount').value='bank';node('belKeterangan').value='Ongkir';
+  await context.simpanPengeluaran();
+  assert.deepEqual(JSON.parse(JSON.stringify(adjustments)),[{accountId:'bank',amount:-5000,reason:'Ongkir'}]);
+});
+test('material expenses require a quantity and retain fields when saving fails',async()=>{
+  const {context,node}=appHarness();
+  let writes=0;
+  context.showToast=()=>{};context.crypto={randomUUID:()=> 'draft'};
+  context.window.kopsusrenServices={recordPurchase:async()=>{writes++;}};
+  vm.runInContext("ensureSyncedV2Entity=()=>true;runV2Mutation=async()=>false;",context);
+  node('expenseType').value='MATERIAL';node('belBahan').value='susu';node('belHarga').value='27000';node('belAccount').value='cash';node('belJumlah').value='';
+  await context.simpanPengeluaran();assert.equal(writes,0);
+  node('belJumlah').value='1000';await context.simpanPengeluaran();
+  assert.equal(node('belHarga').value,'27000');assert.equal(node('belJumlah').value,'1000');
+});
+test('expense category shows stock fields only for material purchases',()=>{
+  const {context,node}=appHarness();
+  for(const [value,hidden] of [['MATERIAL',false],['OTHER',true]]) {
+    node('expenseType').value=value;context.updateExpenseType();
+    assert.equal(node('expenseIngredientFields').hidden,hidden);
+    assert.equal(node('previewHargaSatuan').hidden,hidden);
+  }
+  assert.doesNotMatch(html,/id="tab-pengeluaranLain"|id="pengeJumlah"/);
+});
