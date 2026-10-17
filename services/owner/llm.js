@@ -1,3 +1,4 @@
+import {aiConfig,chatCompletion} from '../ai/provider.js';
 import {validatePurchase} from './purchases.js';
 import Groq from 'groq-sdk';
 
@@ -67,13 +68,15 @@ function consultationHistory(history) {
 }
 
 export function createOwnerLlm({client=null,model=null,timeoutMs=4500}={}) {
-  const configuredModel=model||process.env.OWNER_GROQ_MODEL||process.env.GROQ_MODEL||'openai/gpt-oss-120b';
-  const groq=client||new Groq({apiKey:process.env.GROQ_API_KEY,maxRetries:0,timeout:timeoutMs});
+  const config=aiConfig();
+  const configuredModel=model||(config.provider==='groq'?process.env.OWNER_GROQ_MODEL:null)||config.model;
+  const groq=client||(config.provider==='groq'?new Groq({apiKey:config.key,maxRetries:0,timeout:timeoutMs}):null);
 
   async function oneCall(body) {
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort(),timeoutMs);
     try {
+      if(!groq)return await chatCompletion(body,{signal:controller.signal});
       return await groq.chat.completions.create(body,{signal:controller.signal});
     } finally {
       clearTimeout(timer);
@@ -228,7 +231,7 @@ export function createOwnerLlm({client=null,model=null,timeoutMs=4500}={}) {
 
 let defaultOwnerLlm=null;
 function defaults() {
-  if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY is not configured');
+  if (!aiConfig().key) throw new Error('AI provider key is not configured');
   defaultOwnerLlm||=createOwnerLlm();
   return defaultOwnerLlm;
 }
