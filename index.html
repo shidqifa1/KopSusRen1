@@ -19,7 +19,7 @@
 <link rel="icon" type="image/png" href="icon-192.png">
 
 <!-- Warna background saat loading -->
-<link rel="stylesheet" href="styles.css?v=20261017-web-polish">
+<link rel="stylesheet" href="styles.css?v=20261018-notification-popup">
 <meta charset="UTF-8">
 <title>Baristack App</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
@@ -81,10 +81,17 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div class="subtitle" id="topDate"></div>
     <div class="subtitle sync-status" id="syncStatus" role="status" aria-live="polite"></div>
   </div>
-  <button type="button" class="notification-button" id="notificationButton" onclick="goPage('notifikasi')" aria-label="Buka notifikasi" aria-controls="page-notifikasi">
+  <div class="notification-anchor" id="notificationAnchor">
+  <button type="button" class="notification-button" id="notificationButton" onclick="toggleNotifications()" aria-label="Buka notifikasi" aria-controls="notificationPopup" aria-expanded="false">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
     <span class="notification-count is-hidden" id="notificationCount" hidden aria-hidden="true">0</span>
   </button>
+  <section class="notification-popup is-hidden" id="notificationPopup" aria-labelledby="notificationTitle" hidden>
+    <div class="notification-header"><h2 id="notificationTitle">Notifikasi</h2><button type="button" id="notificationClose" onclick="toggleNotifications(false, true)" aria-label="Tutup notifikasi">×</button></div>
+    <div class="notification-list" id="notificationList"></div>
+    <button type="button" class="notification-footer" onclick="goPage('stok')">Lihat stok bahan</button>
+  </section>
+  </div>
 </div>
 
 <!-- NAV OVERLAY + DRAWER -->
@@ -95,7 +102,6 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <p>Sistem Manajemen Usaha Minuman</p>
   </div>
   <button type="button" class="nav-item active" data-page="dashboard" aria-current="page" onclick="goPage('dashboard')">Dashboard</button>
-  <button type="button" class="nav-item" data-page="notifikasi" onclick="goPage('notifikasi')">Notifikasi</button>
   <button type="button" class="nav-item" data-page="po" onclick="goPage('po')">PO & Orders</button>
   <button type="button" class="nav-item" data-page="approval" onclick="goPage('approval')">Status WhatsApp</button>
   <button type="button" class="nav-item" data-page="riwayat" onclick="goPage('riwayat')">Riwayat Penjualan</button>
@@ -143,15 +149,6 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div id="gatewayStatusCard">Belum ada heartbeat gateway.</div>
   </div>
   <div class="page-bottom"></div>
-</div>
-
-<!-- ============== NOTIFIKASI ============== -->
-<div class="page" id="page-notifikasi">
-  <div class="workspace-heading">
-    <div><p class="workspace-eyebrow">PERLU PERHATIAN</p><div class="section-title">Notifikasi</div><p class="page-description">Peringatan stok diperbarui saat data tersinkron. Notifikasi hilang setelah stok mencukupi.</p></div>
-    <button type="button" class="btn btn-primary" onclick="goPage('stok')">Lihat stok bahan</button>
-  </div>
-  <div class="card" id="notificationList"></div>
 </div>
 
 <!-- ============== DASHBOARD ============== -->
@@ -1238,6 +1235,7 @@ function toggleNav(forceOpen) {
 function goPage(id) {
   if (id === 'penjualan') id = 'po';
   if (id === 'kas') id = 'pengeluaran';
+  toggleNotifications(false);
   activePage = id;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
@@ -1252,7 +1250,6 @@ function goPage(id) {
 }
 
 function renderPage(id) {
-  if(id==='notifikasi') renderNotifications();
   if(id==='dashboard') renderDashboard();
   if(id==='po') renderPo();
   if(id==='approval') renderApprovalInbox();
@@ -1622,6 +1619,11 @@ document.addEventListener('keydown', event => {
   }
   const openModalBackdrop = document.querySelector('.modal-backdrop.open');
   if (event.key === 'Escape') {
+    if (!document.getElementById('notificationPopup').hidden) {
+      event.preventDefault();
+      toggleNotifications(false, true);
+      return;
+    }
     if (openModalBackdrop) {
       event.preventDefault();
       closeModal(openModalBackdrop.id);
@@ -1663,6 +1665,26 @@ function switchTab(tabId) {
     b.setAttribute('tabindex', active ? '0' : '-1');
   });
 }
+
+function toggleNotifications(force, restoreFocus = false) {
+  const popup = document.getElementById('notificationPopup');
+  const open = typeof force === 'boolean' ? force : popup.hidden;
+  popup.hidden = !open;
+  popup.classList.toggle('is-hidden', !open);
+  document.getElementById('notificationButton').setAttribute('aria-expanded', String(open));
+  if (open) {
+    renderNotifications();
+    document.getElementById('notificationClose').focus();
+  } else if (restoreFocus) {
+    document.getElementById('notificationButton').focus();
+  }
+}
+
+document.addEventListener('click', event => {
+  if (!document.getElementById('notificationPopup').hidden && !document.getElementById('notificationAnchor').contains(event.target)) {
+    toggleNotifications(false);
+  }
+});
 
 function renderNotifications() {
   const lowBahan = state.bahan.filter(b => b.stok < b.threshold && b.id !== 'gas');

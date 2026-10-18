@@ -348,7 +348,8 @@ test('stock notifications move off the dashboard and count only shortages', () =
   assert.doesNotMatch(node('notificationList').innerHTML,/>Cup<|>Gas</);
   const dashboard=html.slice(html.indexOf('id="page-dashboard"'),html.indexOf('id="page-riwayat"'));
   assert.doesNotMatch(dashboard,/id="alertPanel"/);
-  assert.match(html,/id="notificationButton"[^>]*onclick="goPage\('notifikasi'\)"/);
+  assert.match(html,/id="notificationButton"[^>]*onclick="toggleNotifications\(\)"/);
+  assert.doesNotMatch(html,/id="page-notifikasi"|data-page="notifikasi"/);
 });
 
 test('restocked inventory clears the badge and shows an empty notification state', () => {
@@ -368,4 +369,39 @@ test('a fresh inventory snapshot updates notifications on other pages too', asyn
     legacyStateFromV2:()=>({bahan:[]}),localStorage:{setItem(){}},updateSyncStatus(){},
     renderNotifications(){refreshed++;}});
   assert.equal(refreshed,1);
+});
+
+
+test('notification popup toggles without navigation and Escape restores bell focus', () => {
+  const {context,node,listeners}=appHarness();
+  node('notificationPopup').hidden=true;
+  let focused='';
+  node('notificationClose').focus=()=>{focused='close';};
+  node('notificationButton').focus=()=>{focused='bell';};
+  const attributes={};
+  node('notificationButton').setAttribute=(name,value)=>{attributes[name]=value;};
+  context.toggleNotifications();
+  assert.equal(node('notificationPopup').hidden,false);
+  assert.equal(attributes['aria-expanded'],'true');
+  assert.equal(focused,'close');
+  assert.equal(vm.runInContext('activePage',context),'dashboard');
+  listeners.keydown({key:'Escape',target:{},preventDefault(){}});
+  assert.equal(node('notificationPopup').hidden,true);
+  assert.equal(attributes['aria-expanded'],'false');
+  assert.equal(focused,'bell');
+  context.toggleNotifications();
+  context.toggleNotifications();
+  assert.equal(node('notificationPopup').hidden,true);
+});
+
+test('clicking outside the bell popup closes it but inside clicks keep it open', () => {
+  const {context,node,listeners}=appHarness();
+  node('notificationPopup').hidden=true;
+  const inside={};
+  node('notificationAnchor').contains=target=>target===inside;
+  context.toggleNotifications(true);
+  listeners.click({target:inside});
+  assert.equal(node('notificationPopup').hidden,false);
+  listeners.click({target:{}});
+  assert.equal(node('notificationPopup').hidden,true);
 });

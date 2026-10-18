@@ -1450,7 +1450,7 @@ input, select, textarea { font-size: 16px; }
   .section-title { font-size: 25px; }
 }
 
-/* Stock warnings live in the notification page, with a compact header entry. */
+/* Compact stock notification popup anchored to the header bell. */
 .notification-button { position: relative; display: flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid #8C7563; border-radius: 12px; background: transparent; color: #FFF7ED; cursor: pointer; }
 .notification-button:hover { background: #654B37; }
 .notification-button:focus-visible { outline: 2px solid #FFF7ED; outline-offset: 3px; }
@@ -1468,3 +1468,19 @@ input, select, textarea { font-size: 16px; }
   .top-bar #topDate { font-size: 10px; }
   .menu-label { display: none; }
 }
+
+.notification-anchor { position: relative; flex: 0 0 44px; }
+.notification-popup { position: absolute; top: calc(100% + 14px); right: 0; width: min(340px, calc(100vw - 32px)); max-height: min(360px, 55dvh); display: flex; flex-direction: column; border: 1px solid #DCD2C2; border-radius: 14px; background: #FFFCF6; color: var(--coklat); box-shadow: 0 10px 32px rgba(55,35,20,.22); }
+.notification-popup::before { content: ''; position: absolute; right: 15px; top: -7px; width: 12px; height: 12px; background: #FFFCF6; border-top: 1px solid #DCD2C2; border-left: 1px solid #DCD2C2; transform: rotate(45deg); }
+.notification-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding: 4px 8px 4px 16px; border-bottom: 1px solid var(--krem2); }
+.notification-header h2 { font-size: 20px; font-weight: 400; }
+.notification-header button { width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--coklat); font-size: 24px; cursor: pointer; }
+.notification-list { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px; }
+.notification-popup .notification-item { padding: 12px 0; gap: 12px; }
+.notification-popup .notification-item:first-child { padding-top: 0; }
+.notification-popup .notification-item:last-child { padding-bottom: 0; }
+.notification-popup .notification-item h3 { font-family: inherit; font-size: 13px; margin: 3px 0; }
+.notification-popup .notification-stock strong { font-size: 19px; }
+.notification-popup .empty-state { padding: 16px 0; }
+.notification-footer { min-height: 44px; flex-shrink: 0; border: 0; border-top: 1px solid var(--krem2); border-radius: 0 0 14px 14px; background: transparent; color: var(--hijau); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.notification-footer:hover, .notification-header button:hover { background: #E7EFE4; }
