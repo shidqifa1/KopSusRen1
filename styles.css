@@ -1449,3 +1449,22 @@ input, select, textarea { font-size: 16px; }
   .stats-grid { gap: 10px; }
   .section-title { font-size: 25px; }
 }
+
+/* Stock warnings live in the notification page, with a compact header entry. */
+.notification-button { position: relative; display: flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; border: 1px solid #8C7563; border-radius: 12px; background: transparent; color: #FFF7ED; cursor: pointer; }
+.notification-button:hover { background: #654B37; }
+.notification-button:focus-visible { outline: 2px solid #FFF7ED; outline-offset: 3px; }
+.notification-count { position: absolute; top: -6px; right: -5px; min-width: 20px; height: 20px; padding: 0 5px; display: grid; place-items: center; border: 2px solid #4C3424; border-radius: 20px; background: #B74437; color: #fff; font-size: 10px; font-weight: 700; }
+.notification-item { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 0; border-bottom: 1px solid var(--krem2); }
+.notification-item:first-child { padding-top: 0; }
+.notification-item:last-child { padding-bottom: 0; border-bottom: 0; }
+.notification-label { font-size: 9px; letter-spacing: 1px; font-weight: 700; color: #A43E32; }
+.notification-item h3 { margin: 5px 0; font-size: 15px; overflow-wrap: anywhere; }
+.notification-item p, .notification-stock span { font-size: 12px; color: var(--abu); }
+.notification-stock { flex-shrink: 0; text-align: right; }
+.notification-stock strong { display: block; font-size: 23px; font-variant-numeric: tabular-nums; color: #A43E32; }
+@media (max-width: 380px) {
+  .top-bar h1 { font-size: 19px; }
+  .top-bar #topDate { font-size: 10px; }
+  .menu-label { display: none; }
+}

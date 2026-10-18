@@ -81,6 +81,10 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div class="subtitle" id="topDate"></div>
     <div class="subtitle sync-status" id="syncStatus" role="status" aria-live="polite"></div>
   </div>
+  <button type="button" class="notification-button" id="notificationButton" onclick="goPage('notifikasi')" aria-label="Buka notifikasi" aria-controls="page-notifikasi">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+    <span class="notification-count is-hidden" id="notificationCount" hidden aria-hidden="true">0</span>
+  </button>
 </div>
 
 <!-- NAV OVERLAY + DRAWER -->
@@ -91,6 +95,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <p>Sistem Manajemen Usaha Minuman</p>
   </div>
   <button type="button" class="nav-item active" data-page="dashboard" aria-current="page" onclick="goPage('dashboard')">Dashboard</button>
+  <button type="button" class="nav-item" data-page="notifikasi" onclick="goPage('notifikasi')">Notifikasi</button>
   <button type="button" class="nav-item" data-page="po" onclick="goPage('po')">PO & Orders</button>
   <button type="button" class="nav-item" data-page="approval" onclick="goPage('approval')">Status WhatsApp</button>
   <button type="button" class="nav-item" data-page="riwayat" onclick="goPage('riwayat')">Riwayat Penjualan</button>
@@ -140,14 +145,21 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
   <div class="page-bottom"></div>
 </div>
 
+<!-- ============== NOTIFIKASI ============== -->
+<div class="page" id="page-notifikasi">
+  <div class="workspace-heading">
+    <div><p class="workspace-eyebrow">PERLU PERHATIAN</p><div class="section-title">Notifikasi</div><p class="page-description">Peringatan stok diperbarui saat data tersinkron. Notifikasi hilang setelah stok mencukupi.</p></div>
+    <button type="button" class="btn btn-primary" onclick="goPage('stok')">Lihat stok bahan</button>
+  </div>
+  <div class="card" id="notificationList"></div>
+</div>
+
 <!-- ============== DASHBOARD ============== -->
 <div class="page active" id="page-dashboard">
   <div class="workspace-heading">
     <div><p class="workspace-eyebrow">RINGKASAN USAHA</p><div class="section-title">Dashboard</div><p class="page-description">Pantau penjualan, kas, dan bahan sebelum mulai produksi.</p></div>
     <button class="btn btn-primary" onclick="goPage('po')">+ Catat penjualan</button>
   </div>
-
-  <div id="alertPanel"></div>
 
   <div class="stats-grid">
     <div class="stat-card hijau">
@@ -1240,6 +1252,7 @@ function goPage(id) {
 }
 
 function renderPage(id) {
+  if(id==='notifikasi') renderNotifications();
   if(id==='dashboard') renderDashboard();
   if(id==='po') renderPo();
   if(id==='approval') renderApprovalInbox();
@@ -1651,6 +1664,22 @@ function switchTab(tabId) {
   });
 }
 
+function renderNotifications() {
+  const lowBahan = state.bahan.filter(b => b.stok < b.threshold && b.id !== 'gas');
+  const count = document.getElementById('notificationCount');
+  count.textContent = String(lowBahan.length);
+  count.hidden = lowBahan.length === 0;
+  count.classList.toggle('is-hidden', lowBahan.length === 0);
+  document.getElementById('notificationButton').setAttribute('aria-label', lowBahan.length
+    ? `Buka notifikasi, ${lowBahan.length} bahan menipis` : 'Buka notifikasi, tidak ada peringatan stok');
+  document.getElementById('notificationList').innerHTML = lowBahan.length
+    ? lowBahan.map(b => `<div class="notification-item">
+        <div><span class="notification-label">STOK MENIPIS</span><h3>${safeText(b.nama)}</h3><p>Minimum ${Number(b.threshold)} ${safeText(b.satuan)}</p></div>
+        <div class="notification-stock"><strong>${Number(b.stok)}</strong><span>${safeText(b.satuan)} tersisa</span></div>
+      </div>`).join('')
+    : '<div class="empty-state"><strong>Stok bahan aman</strong><span>Belum ada bahan di bawah batas minimum.</span></div>';
+}
+
 // ============= DASHBOARD =============
 let dashChart = null;
 function renderDashboard() {
@@ -1675,13 +1704,7 @@ function renderDashboard() {
   document.getElementById('dashBulan').textContent = rp(untungBulan);
   document.getElementById('dashKas').textContent = rp(state.saldoKas);
 
-  // Alert stok
-  const alertP = document.getElementById('alertPanel');
-  const lowBahan = state.bahan.filter(b=>b.stok < b.threshold && b.id!=='gas');
-  alertP.innerHTML = lowBahan.map(b=>`
-    <div class="alert danger">
-      <div><strong>${safeText(b.nama)}</strong> menipis! Stok: ${Number(b.stok)} ${safeText(b.satuan)} (min: ${Number(b.threshold)} ${safeText(b.satuan)})</div>
-    </div>`).join('');
+  renderNotifications();
 
   // Top customer
   const custCount = {};
@@ -1775,6 +1798,7 @@ async function refreshV2() {
   state.laporanList = savedReports;
   localStorage.setItem('kopiManagerV2Cache', JSON.stringify(state));
   updateSyncStatus(true);
+  renderNotifications();
 }
 
 // ============= RIWAYAT =============

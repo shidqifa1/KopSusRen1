@@ -334,3 +334,38 @@ test('expense category shows stock fields only for material purchases',()=>{
   }
   assert.doesNotMatch(html,/id="tab-pengeluaranLain"|id="pengeJumlah"/);
 });
+
+test('stock notifications move off the dashboard and count only shortages', () => {
+  const {context,node}=appHarness();
+  vm.runInContext(`state.bahan=[
+    {id:'milk',nama:'Susu <segar>',stok:100,threshold:200,satuan:'ml'},
+    {id:'cup',nama:'Cup',stok:10,threshold:10,satuan:'pcs'},
+    {id:'gas',nama:'Gas',stok:0,threshold:1,satuan:'kg'}];`,context);
+  context.renderNotifications();
+  assert.equal(node('notificationCount').textContent,'1');
+  assert.equal(node('notificationCount').hidden,false);
+  assert.match(node('notificationList').innerHTML,/Susu &lt;segar&gt;/);
+  assert.doesNotMatch(node('notificationList').innerHTML,/>Cup<|>Gas</);
+  const dashboard=html.slice(html.indexOf('id="page-dashboard"'),html.indexOf('id="page-riwayat"'));
+  assert.doesNotMatch(dashboard,/id="alertPanel"/);
+  assert.match(html,/id="notificationButton"[^>]*onclick="goPage\('notifikasi'\)"/);
+});
+
+test('restocked inventory clears the badge and shows an empty notification state', () => {
+  const {context,node}=appHarness();
+  vm.runInContext("state.bahan=[{id:'milk',nama:'Susu',stok:0,threshold:200,satuan:'ml'}];",context);
+  context.renderNotifications();
+  vm.runInContext('state.bahan[0].stok=200;',context);
+  context.renderNotifications();
+  assert.equal(node('notificationCount').hidden,true);
+  assert.match(node('notificationList').innerHTML,/Stok bahan aman/);
+  assert.doesNotMatch(node('notificationList').innerHTML,/notification-item/);
+});
+
+test('a fresh inventory snapshot updates notifications on other pages too', async () => {
+  let refreshed=0;
+  await run('refreshV2', {state:{},window:{kopsusrenServices:{bootstrap:async()=>({})}},
+    legacyStateFromV2:()=>({bahan:[]}),localStorage:{setItem(){}},updateSyncStatus(){},
+    renderNotifications(){refreshed++;}});
+  assert.equal(refreshed,1);
+});
