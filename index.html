@@ -232,7 +232,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 <div class="page" id="page-stok">
   <div class="section-title">Stok & Bahan Baku</div>
   <div class="alert warning">
-    <div>Pilih bahan untuk mengisi harga HPP, stok fisik, atau batas restock. Simpan harga HPP tidak mengubah stok dan kas. Pembelian baru dicatat di Belanja &amp; Pengeluaran.</div>
+    <div>Pilih bahan untuk mengisi harga HPP, stok fisik, atau batas restock. Mengubah HPP saja tidak mengubah stok dan kas. Pembelian baru dicatat di Belanja &amp; Pengeluaran.</div>
   </div>
   <div id="stokList"></div>
   <div id="restockPanel" style="margin-top:8px;"></div>
@@ -445,25 +445,23 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <input type="number" id="editBahanStok" step="any" placeholder="Contoh: 1000">
 
     <div id="editBahanPriceFields" style="background:var(--krem2);padding:10px;border-radius:8px;margin:10px 0">
-      <label for="editBahanHargaKemasan" style="margin-top:0">Harga Per Kemasan (Rp)</label>
+      <label for="editBahanCostSource" style="margin-top:0">Sumber HPP</label>
+      <select id="editBahanCostSource" onchange="updateHargaPreview()"><option value="manual">Isi harga manual</option><option value="purchase">Otomatis dari pembelian</option></select>
+      <label for="editBahanHargaKemasan">Harga Per Kemasan (Rp)</label>
       <input type="number" id="editBahanHargaKemasan" min="0" step="any" placeholder="Contoh: 67000">
 
       <label for="editBahanIsiKemasan">Isi Per Kemasan (dalam satuan dasar)</label>
     <input type="number" id="editBahanIsiKemasan" min="0.000001" step="any" placeholder="Contoh: 1000">
 
       <div style="font-size:12px;margin-top:8px;color:var(--hijau)" id="hargaPerSatuanPreview"></div>
-      <div id="ingredientCostActions" class="btn-group">
-        <button type="button" id="saveIngredientCostBtn" class="btn btn-primary" onclick="simpanHargaBahan()">Simpan harga HPP</button>
-        <button type="button" id="resetIngredientCostBtn" class="btn btn-outline" onclick="simpanHargaBahan(true)">Pakai HPP pembelian</button>
-      </div>
     </div>
-    <div id="editBahanV2CostNote" class="form-help" style="display:none">Harga HPP tersimpan terpisah dari stok dan kas. Harga manual tetap dipakai sampai memilih Pakai HPP pembelian.</div>
+    <div id="editBahanV2CostNote" class="form-help" style="display:none">Simpan menerapkan perubahan di form ini. Mengubah HPP saja tidak mengubah stok atau kas. Pembelian baru dicatat di Belanja &amp; Pengeluaran.</div>
 
     <label for="editBahanThreshold">Threshold Restock (batas minimal)</label>
     <input type="number" id="editBahanThreshold" placeholder="Contoh: 200">
 
     <div class="btn-group">
-      <button class="btn btn-primary btn-full" onclick="simpanEditBahan()">Simpan stok &amp; batas restock</button>
+      <button class="btn btn-primary btn-full" onclick="simpanEditBahan()">Simpan</button>
     </div>
   </div>
 </div>
@@ -2071,6 +2069,13 @@ function getDefaultIsiKemasan(id) {
 }
 
 function updateHargaPreview() {
+  const automatic = state.isV2 && document.getElementById('editBahanCostSource').value === 'purchase';
+  document.getElementById('editBahanHargaKemasan').disabled = automatic;
+  document.getElementById('editBahanIsiKemasan').disabled = automatic;
+  if (automatic) {
+    document.getElementById('hargaPerSatuanPreview').textContent = 'HPP dihitung otomatis dari catatan pembelian.';
+    return;
+  }
   const harga = parseFloat(document.getElementById('editBahanHargaKemasan').value) || 0;
   const isi = parseFloat(document.getElementById('editBahanIsiKemasan').value) || 1;
   const satuan = document.getElementById('editBahanSatuan').value;
@@ -2091,9 +2096,7 @@ function editBahan(id) {
   document.getElementById('editBahanStok').value = b.stok;
   document.getElementById('editBahanThreshold').value = b.threshold;
   document.getElementById('editBahanPriceFields').style.display = 'block';
-  document.getElementById('ingredientCostActions').style.display = state.isV2 ? 'flex' : 'none';
-  document.getElementById('resetIngredientCostBtn').hidden = !b.hasManualCost;
-  document.getElementById('resetIngredientCostBtn').classList.toggle('is-hidden', !b.hasManualCost);
+  document.getElementById('editBahanCostSource').value = state.isV2 && !b.hasManualCost ? 'purchase' : 'manual';
   document.getElementById('editBahanV2CostNote').style.display = state.isV2 ? 'block' : 'none';
 
   // Isi kemasan & harga kemasan
@@ -2107,23 +2110,6 @@ function editBahan(id) {
   document.getElementById('editBahanIsiKemasan').oninput = updateHargaPreview;
 
   if (!document.getElementById('modalBahan').classList.contains('open')) openModal('modalBahan');
-}
-
-async function simpanHargaBahan(usePurchaseCost = false) {
-  const id = document.getElementById('editBahanId').value;
-  if (!state.isV2 || !ensureSyncedV2Entity(id, 'Bahan')) return;
-  const priceInput = document.getElementById('editBahanHargaKemasan').value;
-  const quantityInput = document.getElementById('editBahanIsiKemasan').value;
-  const packagePrice = Number(priceInput);
-  const packageQuantity = Number(quantityInput);
-  if (!usePurchaseCost && (priceInput.trim() === '' || quantityInput.trim() === '' || !Number.isFinite(packagePrice) || packagePrice < 0 || !Number.isFinite(packageQuantity) || packageQuantity <= 0)) {
-    showToast('Isi harga kemasan minimal 0 dan isi kemasan lebih dari 0', 'error');
-    return;
-  }
-  const payload = usePurchaseCost ? {ingredientId:id, costOnly:true, usePurchaseCost:true}
-    : {ingredientId:id, costOnly:true, packagePrice, packageQuantity};
-  const ok = await runV2Mutation('Menyimpan harga HPP...', () => window.kopsusrenServices.updateIngredient(payload), 'Harga HPP tersimpan. Stok dan kas tetap.');
-  if (ok) editBahan(id);
 }
 
 async function simpanEditBahan() {
@@ -2143,11 +2129,25 @@ async function simpanEditBahan() {
 
   if (state.isV2) {
     if (!ensureSyncedV2Entity(id, 'Bahan')) return;
-    const threshold = isNaN(thresholdBaru) ? b.threshold : thresholdBaru;
-    const ok = await runV2Mutation('Menyimpan stok...', () => window.kopsusrenServices.updateIngredient({
-      ingredientId: id, physicalStock: stokBaru, threshold,
-      reason: 'Stock opname dari halaman Stok & Bahan Baku',
-    }), `${b.nama} berhasil diperbarui`);
+    const threshold = thresholdBaru;
+    if (![stokBaru, threshold].every(value => Number.isFinite(value) && value >= 0)) {
+      showToast('Isi stok dan batas restock dengan angka minimal 0', 'error');
+      return;
+    }
+    const automatic = document.getElementById('editBahanCostSource').value === 'purchase';
+    if (!automatic && (![hargaKemasan, isiKemasan].every(Number.isFinite) || hargaKemasan < 0 || isiKemasan <= 0)) {
+      showToast('Isi harga kemasan minimal 0 dan isi kemasan lebih dari 0', 'error');
+      return;
+    }
+    const stockChanged = stokBaru !== Number(b.stok) || threshold !== Number(b.threshold);
+    const costChanged = automatic ? Boolean(b.hasManualCost)
+      : !b.hasManualCost || hargaKemasan !== Number(b.hargaKemasan) || isiKemasan !== Number(b.isiKemasan);
+    if (!stockChanged && !costChanged) { closeModal('modalBahan'); return; }
+    const payload = {ingredientId:id};
+    if (stockChanged) Object.assign(payload, {physicalStock:stokBaru, threshold, reason:'Stock opname dari halaman Stok & Bahan Baku'});
+    if (costChanged) Object.assign(payload, stockChanged ? {updateCost:true} : {costOnly:true},
+      automatic ? {usePurchaseCost:true} : {packagePrice:hargaKemasan, packageQuantity:isiKemasan});
+    const ok = await runV2Mutation('Menyimpan bahan...', () => window.kopsusrenServices.updateIngredient(payload), `${b.nama} berhasil diperbarui`);
     if (ok) { closeModal('modalBahan'); renderStok(); }
     return;
   }

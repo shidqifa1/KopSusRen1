@@ -209,23 +209,46 @@ test('cash import sends one batch and retains signed amounts and references',asy
   assert.equal(batch[1].referenceId,`csv-cash:${'a'.repeat(64)}:1`);
 });
 
-test('V2 ingredient editor exposes separate package-cost controls',()=>{
-  const {context,node}=appHarness();
-  context.openModal=()=>{};
-  context.editBahan('susu');
+test('ingredient editor has one save action and a cost source option',()=>{
+  const {context,node}=appHarness();context.openModal=()=>{};context.editBahan('susu');
   assert.notEqual(node('editBahanPriceFields').style.display,'none');
-  assert.match(html,/id="saveIngredientCostBtn"[^>]*onclick="simpanHargaBahan\(\)"/);
+  const editor=html.slice(html.indexOf('id="modalBahan"'),html.indexOf('<!-- Edit Resep Modal -->'));
+  assert.equal((editor.match(/onclick="simpan/g)||[]).length,1);
+  assert.match(editor,/id="editBahanCostSource"/);
+  assert.doesNotMatch(editor,/simpanHargaBahan|saveIngredientCostBtn|resetIngredientCostBtn/);
 });
-test('saving HPP sends only package cost, never physical stock or a purchase',async()=>{
-  const {context,node}=appHarness();
-  let sent;
-  context.crypto={randomUUID:()=> 'unused'};
-  vm.runInContext("ensureSyncedV2Entity=()=>true;runV2Mutation=async(text,work)=>{await work();return true;};",context);
-  context.window.kopsusrenServices={updateIngredient:async payload=>{sent=payload;}};
-  context.editBahan=()=>{};
-  node('editBahanId').value='susu';node('editBahanHargaKemasan').value='270000';node('editBahanIsiKemasan').value='12000';
-  await context.simpanHargaBahan();
-  assert.deepEqual(JSON.parse(JSON.stringify(sent)),{ingredientId:'susu',costOnly:true,packagePrice:270000,packageQuantity:12000});
+async function saveIngredientForm({stockChanged=false,costChanged=false,automatic=false,fail=false}={}) {
+  const {context,node}=appHarness();const sent=[];let closed=false;
+  context.openModal=()=>{};context.closeModal=()=>{closed=true;};context.renderStok=()=>{};
+  vm.runInContext("ensureSyncedV2Entity=()=>true;state.bahan.find(b=>b.id==='susu').hasManualCost=true;",context);
+  context.editBahan('susu');
+  context.runV2Mutation=async(text,work)=>{if(fail)return false;await work();return true;};
+  context.window.kopsusrenServices={updateIngredient:async payload=>{sent.push(payload);}};
+  node('editBahanCostSource').value=automatic?'purchase':'manual';
+  if(stockChanged)node('editBahanStok').value=String(Number(node('editBahanStok').value)+100);
+  if(costChanged){node('editBahanHargaKemasan').value='270000';node('editBahanIsiKemasan').value='12000';}
+  await context.simpanEditBahan();
+  return {sent:JSON.parse(JSON.stringify(sent)),closed};
+}
+test('one save sends cost-only changes without stock or cash operations',async()=>{
+  const {sent,closed}=await saveIngredientForm({costChanged:true});
+  assert.deepEqual(sent,[{ingredientId:'susu',costOnly:true,packagePrice:270000,packageQuantity:12000}]);
+  assert.equal(closed,true);
+});
+test('one save combines stock and HPP into a single command',async()=>{
+  const {sent}=await saveIngredientForm({stockChanged:true,costChanged:true});
+  assert.equal(sent.length,1);assert.equal(sent[0].updateCost,true);
+  assert.equal(sent[0].packagePrice,270000);assert.equal(sent[0].packageQuantity,12000);
+  assert.ok(Number.isFinite(sent[0].physicalStock));assert.ok(Number.isFinite(sent[0].threshold));
+});
+test('stock-only save preserves HPP and failed save keeps the editor open',async()=>{
+  const {sent}=await saveIngredientForm({stockChanged:true});
+  assert.equal(sent.length,1);assert.equal(sent[0].updateCost,undefined);assert.equal(sent[0].packagePrice,undefined);
+  assert.equal((await saveIngredientForm({costChanged:true,fail:true})).closed,false);
+});
+test('purchase-based HPP is selected in the form and saved through the same button',async()=>{
+  const {sent}=await saveIngredientForm({automatic:true});
+  assert.deepEqual(sent,[{ingredientId:'susu',costOnly:true,usePurchaseCost:true}]);
 });
 async function costCommand(payload) {
   const start=commands.indexOf('case "update_ingredient": {');
@@ -404,4 +427,16 @@ test('clicking outside the bell popup closes it but inside clicks keep it open',
   assert.equal(node('notificationPopup').hidden,false);
   listeners.click({target:{}});
   assert.equal(node('notificationPopup').hidden,true);
+});
+
+test('combined ingredient command saves cost and stock in one transaction without cash writes',async()=>{
+  const calls=await costCommand({ingredientId:'ingredient',updateCost:true,packagePrice:270000,packageQuantity:12000,physicalStock:12000,threshold:1000});
+  assert.ok(calls.some(c=>/cost_pack_price=/.test(c.query)));
+  assert.ok(calls.some(c=>/select update_ingredient/.test(c.query)));
+  assert.doesNotMatch(calls.map(c=>c.query).join(' '),/ledger_entries|purchase_items|record_purchase/);
+});
+test('combined ingredient command rejects invalid cost or stock before writes',async()=>{
+  for (const values of [{packageQuantity:0},{physicalStock:-1},{threshold:-1},{physicalStock:null},{threshold:''}]) {
+    await assert.rejects(()=>costCommand({ingredientId:'ingredient',updateCost:true,packagePrice:10,packageQuantity:1,physicalStock:0,threshold:1,...values}));
+  }
 });

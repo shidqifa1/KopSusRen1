@@ -686,7 +686,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         break;
       case "update_ingredient": {
         const ingredientId = await resolveIngredientId(payload.ingredientId);
-        if (payload.costOnly === true) {
+        if (payload.costOnly === true || payload.updateCost === true) {
+          const updateStock = payload.costOnly !== true && payload.updateCost === true;
+          if (updateStock && [payload.physicalStock, payload.threshold].some(value =>
+            !['number','string'].includes(typeof value) || String(value).trim() === '' || !Number.isFinite(Number(value)) || Number(value) < 0
+          )) throw new Error('Isi stok dan batas restock dengan angka minimal 0');
           const automatic = payload.usePurchaseCost === true;
           const packagePrice = automatic ? null : Number(payload.packagePrice);
           const packageQuantity = automatic ? null : Number(payload.packageQuantity);
@@ -703,6 +707,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               values('INGREDIENT_COST_UPDATED','ingredient',${ingredientId},${sql.json({
                 before: before[0], packagePrice, packageQuantity, source: automatic ? 'PURCHASE_AVERAGE' : 'MANUAL',
               })})`;
+            if (updateStock) await db`select update_ingredient(${ingredientId}, ${Number(payload.physicalStock)}, ${Number(payload.threshold)}, ${payload.reason}) as id`;
             return updated;
           });
         } else {
