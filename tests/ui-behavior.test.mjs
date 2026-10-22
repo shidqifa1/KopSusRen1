@@ -153,7 +153,7 @@ test('regenerated reports replace the saved version and exclude ice for no-ice s
   const usage=reports[0].htmlContent.split('<h2>Estimasi Bahan Terpakai</h2>')[1]?.split('<h2>Informasi Kas</h2>')[0];
   assert.ok(usage);
   assert.doesNotMatch(usage,/Es batu/);
-  assert.match(reports[0].htmlContent,/Saldo Kas Saat Laporan Dibuat/);
+  assert.match(reports[0].htmlContent,/Saldo blu Saat Laporan Dibuat/);
 });
 test('transaction tabs support arrow keys, Home and End', () => {
   const {context,listeners}=appHarness();
@@ -439,4 +439,72 @@ test('combined ingredient command rejects invalid cost or stock before writes',a
   for (const values of [{packageQuantity:0},{physicalStock:-1},{threshold:-1},{physicalStock:null},{threshold:''}]) {
     await assert.rejects(()=>costCommand({ingredientId:'ingredient',updateCost:true,packagePrice:10,packageQuantity:1,physicalStock:0,threshold:1,...values}));
   }
+});
+
+test('blu and pending QRIS balances both contribute to total business funds',()=>{
+  const {context,node}=appHarness();
+  const converted=context.legacyStateFromV2({ingredients:[],products:[],recipes:[],orders:[],purchases:[],poSessions:[],accounts:[{id:'cash',name:'Cash',type:'CASH',balance:342065.38},{id:'bank',name:'Blu',type:'BANK',balance:0},{id:'qr',name:'QRIS',type:'QRIS',balance:16000}],ledgerEntries:[{id:'qr-sale',account_type:'QRIS',account_name:'QRIS',created_at:'2026-10-22T01:00:00Z',amount:16000,running_balance:16000,entry_type:'SALE',description:'Pembayaran order'}]});
+  assert.equal(converted.saldoKas,342065.38);
+  assert.equal(converted.saldoQris,16000);
+  assert.equal(converted.totalDana,358065.38);
+  assert.equal(converted.accounts[0].name,'blu');
+  assert.equal(converted.mutasiKas[0].akun,'QRIS belum cair');
+  context.state=converted;
+  vm.runInContext('state = globalThis.state;',context);
+  context.renderCashOverview();
+  assert.match(node('kasMutasiList').innerHTML,/QRIS belum cair/);
+  assert.match(node('saldoQrisDisplay').textContent,/16[.]000/);
+});
+
+test('QRIS settlement sends one confirmed command and retains retry key on failure',async()=>{
+  const {context,node}=appHarness();const sent=[];let allow=false;
+  vm.runInContext('state.saldoQris=16000;',context);
+  context.confirm=()=>true;context.showToast=()=>{};context.crypto={randomUUID:()=> '22222222-2222-4222-8222-222222222222'};
+  context.window.kopsusrenServices={settleQris:async payload=>sent.push({...payload})};
+  context.runV2Mutation=async(text,work)=>{await work();return allow;};
+  node('qrisGross').value='16000';node('qrisNet').value='15900';
+  await context.simpanPencairanQris();allow=true;await context.simpanPencairanQris();
+  assert.equal(sent.length,2);assert.equal(sent[0].idempotencyKey,sent[1].idempotencyKey);
+  assert.equal(sent[0].grossAmount,16000);assert.equal(sent[0].netAmount,15900);
+});
+
+async function settlementCommand(payload,{balance=16000,duplicate=false,failCredit=false}={}) {
+  const start=commands.indexOf('case "settle_qris": {');assert.ok(start>=0,'settle_qris exists');
+  const end=commands.indexOf('\n      case ',start+1);const calls=[];let transaction=0,committed=false;
+  const sql=async(parts,...values)=>{
+    const query=parts.join('?');calls.push({query,values,transaction});
+    if(/from accounts/.test(query))return [{id:'blu',type:'CASH'},{id:'qr',type:'QRIS'}];
+    if(/reference_type='qris_settlement'/.test(query))return duplicate?[{amount:-16000,account_id:'qr',entry_type:'TRANSFER_OUT'},{amount:16000,account_id:'blu',entry_type:'TRANSFER_IN'},{amount:-100,account_id:'blu',entry_type:'EXPENSE'}]:[];
+    if(/from account_balances/.test(query))return [{balance}];
+    if(failCredit&&/insert into ledger_entries/.test(query)&&query.includes('TRANSFER_IN'))throw Error('credit failed');
+    return [{id:'settlement'}];
+  };
+  sql.begin=async fn=>{transaction++;const result=await fn(sql);committed=true;return result;};sql.json=v=>({json:v});
+  const context=vm.createContext({payload,sql,uuidPattern:/^[0-9a-f-]{36}$/i});
+  const script=ts.transpile(`(async()=>{let rows;switch('settle_qris'){${commands.slice(start,end)}}return rows;})()`,{target:ts.ScriptTarget.ES2022});
+  try {await vm.runInContext(script,context);}catch(error){error.calls=calls;error.committed=committed;throw error;}
+  return {calls,committed};
+}
+const settlementPayload={grossAmount:16000,netAmount:15900,idempotencyKey:'22222222-2222-4222-8222-222222222222'};
+test('QRIS settlement transfers gross to blu with fees and never records another sale',async()=>{
+  const {calls,committed}=await settlementCommand(settlementPayload);
+  assert.equal(committed,true);assert.ok(calls.every(c=>c.transaction===1));
+  assert.ok(calls.some(c=>/for update/i.test(c.query)));
+  const writes=calls.filter(c=>/insert into ledger_entries/.test(c.query));
+  assert.equal(writes.length,3);
+  assert.ok(writes.some(c=>c.values.includes(-16000)));
+  assert.ok(writes.some(c=>c.values.includes(16000)));
+  assert.ok(writes.some(c=>c.values.includes(-100)));
+  assert.equal(writes.reduce((sum,c)=>sum+c.values.find(v=>typeof v==='number'),0),-100,'only the fee reduces total funds');
+  assert.doesNotMatch(writes.map(c=>c.query).join(' '),/'SALE'|record_quick_sale/);
+});
+test('settlement rejects insufficient funds and invalid numbers without writing',async()=>{
+  for(const payload of [{...settlementPayload,grossAmount:17000},{...settlementPayload,netAmount:17000},{...settlementPayload,grossAmount:0},{...settlementPayload,netAmount:''},{...settlementPayload,grossAmount:1.001},{...settlementPayload,idempotencyKey:'bad'}]) {
+    await assert.rejects(()=>settlementCommand(payload),error=>!error.calls.some(c=>/insert into/.test(c.query)));
+  }
+});
+test('settlement retries are idempotent and credit failure aborts the transaction',async()=>{
+  const duplicate=await settlementCommand(settlementPayload,{balance:0,duplicate:true});
+  assert.equal(duplicate.calls.filter(c=>/insert into/.test(c.query)).length,0);
+  await assert.rejects(()=>settlementCommand(settlementPayload,{failCredit:true}),error=>error.message==='credit failed'&&!error.committed);
 });

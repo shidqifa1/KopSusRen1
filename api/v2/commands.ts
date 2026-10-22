@@ -11,7 +11,7 @@ import { handleChatInbound as handleChatInboundV2, recoverAbandonedInboundMessag
 const allowedActions = new Set([
   "record_quick_sale", "record_purchase", "create_order", "cancel_order",
   "confirm_cash_payment", "complete_order", "void_order", "create_po", "open_po_now", "set_po_status",
-  "adjust_inventory", "adjust_account", "update_ingredient", "update_product_recipe", "run_po_maintenance", "gateway_heartbeat",
+  "adjust_inventory", "adjust_account", "settle_qris", "update_ingredient", "update_product_recipe", "run_po_maintenance", "gateway_heartbeat",
   "import_sales", "import_cash", "import_settings",
   "chat_inbound", "approval_list", "approval_approve", "approval_reject",
 ]);
@@ -679,6 +679,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "adjust_inventory": {
         const ingredientId = await resolveIngredientId(payload.ingredientId);
         rows = await sql`select adjust_inventory(${ingredientId}, ${payload.quantityDelta}, ${payload.reason}) as id`;
+        break;
+      }
+      case "settle_qris": {
+        const gross = Number(payload.grossAmount), net = Number(payload.netAmount);
+        if (!uuidPattern.test(String(payload.idempotencyKey || '')) || [payload.grossAmount,payload.netAmount].some(value => !['number','string'].includes(typeof value) || String(value).trim() === '')
+          || ![gross,net].every(v => Number.isFinite(v) && v > 0 && v <= 9999999999.99 && Math.abs(v*100-Math.round(v*100)) < 0.000001) || net > gross) throw new Error('Nominal pencairan QRIS tidak valid');
+        const fee = Math.round((gross-net)*100)/100;
+        rows = await sql.begin(async db => {
+          // Serialize settlements on the same accounts; the legacy CASH ledger
+          // is the owner's primary blu account throughout existing sales RPCs.
+          const accounts = await db`select id,type from accounts where type in ('CASH','QRIS') and is_active order by created_at,id for update`;
+          const blu = accounts.find(a => a.type === 'CASH'), qris = accounts.find(a => a.type === 'QRIS');
+          if (!blu || !qris) throw new Error('Akun blu atau QRIS tidak tersedia');
+          const previous = await db`select account_id,amount::float8 amount,entry_type from ledger_entries where reference_type='qris_settlement' and reference_id=${payload.idempotencyKey}`;
+          if (previous.length) {
+            const same = previous.some(e => e.account_id === qris.id && e.entry_type === 'TRANSFER_OUT' && Number(e.amount) === -gross)
+              && previous.some(e => e.account_id === blu.id && e.entry_type === 'TRANSFER_IN' && Number(e.amount) === gross)
+              && (fee === 0 ? !previous.some(e => e.entry_type === 'EXPENSE') : previous.some(e => e.account_id === blu.id && e.entry_type === 'EXPENSE' && Number(e.amount) === -fee));
+            if (!same) throw new Error('Kunci pencairan sudah dipakai untuk nominal berbeda');
+            return [{id:payload.idempotencyKey}];
+          }
+          const balance = await db`select balance::float8 balance from account_balances where account_id=${qris.id}`;
+          if (Number(balance[0]?.balance || 0) < gross) throw new Error('Saldo QRIS belum cair tidak mencukupi');
+          await db`insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description)
+            values(${qris.id},${-gross},'TRANSFER_OUT','qris_settlement',${payload.idempotencyKey},'Pencairan QRIS ke blu')`;
+          await db`insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description)
+            values(${blu.id},${gross},'TRANSFER_IN','qris_settlement',${payload.idempotencyKey},'Pencairan QRIS diterima blu')`;
+          if (fee > 0) await db`insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description)
+            values(${blu.id},${-fee},'EXPENSE','qris_settlement',${payload.idempotencyKey},'Biaya pencairan QRIS')`;
+          await db`insert into audit_logs(event_type,entity_type,entity_id,payload) values('QRIS_SETTLED','account',${blu.id},${sql.json({gross,net,fee,referenceId:payload.idempotencyKey})})`;
+          return [{id:payload.idempotencyKey}];
+        });
         break;
       }
       case "adjust_account":

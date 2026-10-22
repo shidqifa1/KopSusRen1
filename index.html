@@ -23,7 +23,7 @@
 <meta charset="UTF-8">
 <title>Baristack App</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="/src/services/kopsusren.js?v=20261004-open-po-popup"></script>
+<script src="/src/services/kopsusren.js?v=20261022-blu-qris"></script>
 <script>
   window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
 </script>
@@ -129,7 +129,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
         <div class="field"><label for="orderClass">Kelas</label><input id="orderClass" placeholder="Contoh: 8.1"></div>
         <div class="field field-wide"><label for="orderProduct">Menu</label><select id="orderProduct"></select></div>
         <div class="field"><label for="orderQty">Jumlah cup</label><input id="orderQty" type="number" min="1" value="1"></div>
-        <div class="field"><label for="orderPayment">Pembayaran diterima</label><select id="orderPayment"><option value="CASH">Tunai sudah diterima</option><option value="QRIS">QRIS sudah diterima</option></select></div>
+        <div class="field"><label for="orderPayment">Pembayaran diterima</label><select id="orderPayment"><option value="CASH">Transfer blu sudah diterima</option><option value="QRIS">QRIS sudah diterima</option></select></div>
         <div class="field field-wide"><label for="orderNotes">Catatan</label><input id="orderNotes" placeholder="Opsional, misalnya: less sugar / no ice"></div>
       </div>
       <button id="poOrderSubmit" class="btn btn-primary btn-full po-submit" onclick="simpanPenjualanLangsung()">Simpan penjualan</button>
@@ -175,9 +175,9 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
       <div class="stat-sub">akumulasi bulan ini</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Saldo Kas</div>
+      <div class="stat-label">Total Dana Usaha</div>
       <div class="stat-value" id="dashKas">Rp0</div>
-      <div class="stat-sub">saldo usaha saat ini</div>
+      <div class="stat-sub" id="dashDanaRincian">blu + QRIS belum cair</div>
     </div>
   </div>
 
@@ -255,14 +255,28 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
   <div class="stats-grid">
     <div class="stat-card hijau" style="grid-column:span 2">
-      <div class="stat-label">Saldo Kas Saat Ini</div>
+      <div class="stat-label">Saldo blu</div>
       <div class="stat-value" id="saldoKasDisplay">Rp0</div>
-      <div class="stat-sub">Saldo live dari database</div>
+      <div class="stat-sub">Uang yang sudah tersedia untuk belanja</div>
     </div>
   </div>
 
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">QRIS belum cair</div><div class="stat-value" id="saldoQrisDisplay">Rp0</div><div class="stat-sub">Biasanya masuk blu H+1; konfirmasi setelah diterima</div></div>
+    <div class="stat-card"><div class="stat-label">Total Dana Usaha</div><div class="stat-value" id="totalDanaDisplay">Rp0</div><div class="stat-sub">Saldo blu + QRIS belum cair</div></div>
+  </div>
+  <details class="card">
+    <summary>Catat pencairan QRIS ke blu</summary>
+    <p class="form-help" style="margin-top:12px">Isi hanya setelah uang masuk blu. Pencairan memindahkan saldo QRIS, bukan menambah penjualan. Selisih nominal dicatat sebagai biaya QRIS.</p>
+    <div class="form-grid">
+      <div class="field"><label for="qrisGross">Saldo QRIS yang dicairkan (Rp)</label><input id="qrisGross" type="number" min="0.01" step="0.01" placeholder="Contoh: 16000"></div>
+      <div class="field"><label for="qrisNet">Bersih masuk blu (Rp)</label><input id="qrisNet" type="number" min="0.01" step="0.01" placeholder="Contoh: 15900"></div>
+    </div>
+    <button type="button" class="btn btn-primary btn-full" id="qrisSettleButton" onclick="simpanPencairanQris()">Konfirmasi sudah cair ke blu</button>
+  </details>
+
   <details class="card cash-history" open>
-    <summary><span><small>DATA KAS</small><strong>Riwayat mutasi kas</strong></span><b aria-hidden="true">⌄</b></summary>
+    <summary><span><small>DANA USAHA</small><strong>Mutasi blu &amp; QRIS</strong></span><b aria-hidden="true">⌄</b></summary>
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
       <span>Riwayat mutasi terbaru</span>
       <span id="mutasiCount" style="font-size:12px;color:var(--abu2)"></span>
@@ -350,8 +364,8 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <div class="section-title">Pengaturan & Backup</div>
 
     <div class="card">
-      <div class="card-title">Saldo Kas Awal</div>
-      <label for="setSaldo">Set Saldo Kas (Rp)</label>
+      <div class="card-title">Saldo blu</div>
+      <label for="setSaldo">Sesuaikan saldo blu (Rp)</label>
     <input type="number" id="setSaldo" placeholder="Contoh: 59281">
       <div class="btn-group">
         <button class="btn btn-primary" onclick="setSaldoAwal()">Set Saldo</button>
@@ -404,7 +418,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
       <strong>Baristack App</strong><br>
       Manajemen usaha minuman: kopi, matcha, latte, americano.<br>
       Data utama tersimpan di Supabase dan transaksi diproses secara atomik.<br><br>
-      Fitur aktif: penjualan, PO, pembayaran tunai/QRIS manual, stok, resep, belanja, kas, laporan, dan export.
+      Fitur aktif: penjualan, PO, pembayaran blu/QRIS manual, stok, resep, belanja, kas, laporan, dan export.
     </p>
   </div>
   <div class="page-bottom"></div>
@@ -983,16 +997,20 @@ function legacyStateFromV2(data) {
           totalHarga: Number(item.unit_price),
           modal: modalPerCup,
           noIce: Boolean(item.no_ice),
-          bayar: o.payment_method === 'CASH' ? 'Cash' : 'QRIS',
+          bayar: o.payment_method === 'CASH' ? 'Transfer blu' : 'QRIS',
           keterangan: o.notes || '',
         });
       }
     });
   });
-  const cash = data.accounts.find(a => a.type === 'CASH');
+  // CASH is the existing primary ledger used by sales/imports. It represents
+  // the owner's blu funds, not physical notes. Preserve its IDs and history.
+  const blu = data.accounts.filter(a => a.type === 'CASH' || a.type === 'BANK').reduce((sum,a) => sum + Number(a.balance || 0), 0);
+  const qris = data.accounts.filter(a => a.type === 'QRIS').reduce((sum,a) => sum + Number(a.balance || 0), 0);
   return {
     bahan, menu, penjualan,
-    mutasiKas: (data.ledgerEntries || []).filter(entry => entry.account_type === 'CASH').map(entry => ({
+    mutasiKas: (data.ledgerEntries || []).filter(entry => ['CASH','BANK','QRIS'].includes(entry.account_type)).map(entry => ({
+      akun: entry.account_type === 'QRIS' ? 'QRIS belum cair' : 'blu',
       id: entry.id,
       createdAt: entry.created_at,
       tanggal: new Date(entry.created_at).toLocaleDateString('en-CA'),
@@ -1020,8 +1038,10 @@ function legacyStateFromV2(data) {
       keterangan: entry.description,
     }))),
     laporanList: [],
-    saldoKas: Number(cash?.balance || 0),
-    accounts: data.accounts,
+    saldoKas: blu,
+    saldoQris: qris,
+    totalDana: Math.round((blu + qris) * 100) / 100,
+    accounts: data.accounts.map(a => ({...a, name:a.type === 'CASH' ? 'blu' : a.name})),
     poSessions: data.poSessions,
     orders: data.orders,
     gatewayStatus: data.gatewayStatus || null,
@@ -1459,9 +1479,9 @@ function renderPo() {
         <div><div class="po-order-number">ORDER #${order.order_number}</div><strong class="po-order-name">${safeText(order.customer_name)}${order.class_name ? ` · ${safeText(order.class_name)}` : ''}</strong></div>
         <span class="badge ${badgeClass}">${poStatusLabel(order.status)}</span>
       </div>
-      <div class="po-order-meta">${itemText}<br>${order.payment_method === 'CASH' ? 'Tunai' : 'QRIS'} · ${paymentStatusLabel(order.payment_status)}</div>
+      <div class="po-order-meta">${itemText}<br>${order.payment_method === 'CASH' ? 'Transfer blu' : 'QRIS'} · ${paymentStatusLabel(order.payment_status)}</div>
       ${!inactive ? `<div class="po-order-actions">
-        ${!paid ? `<button class="btn btn-primary btn-sm" onclick="konfirmasiPembayaran('${order.id}')">Konfirmasi ${order.payment_method === 'CASH' ? 'tunai' : 'QRIS'}</button>` : ''}
+        ${!paid ? `<button class="btn btn-primary btn-sm" onclick="konfirmasiPembayaran('${order.id}')">Konfirmasi ${order.payment_method === 'CASH' ? 'transfer blu' : 'QRIS'}</button>` : ''}
         <button class="btn btn-outline btn-sm" onclick="selesaikanOrder('${order.id}')" ${paid ? '' : 'disabled title="Konfirmasi pembayaran dulu"'}>Pesanan selesai</button>
         <button class="btn btn-danger btn-sm" onclick="batalkanOrder('${order.id}')">Batalkan</button>
       </div>` : ''}
@@ -1722,7 +1742,8 @@ function renderDashboard() {
   document.getElementById('dashUntung').textContent = rp(untungHari);
   document.getElementById('dashMargin').textContent = 'margin ' + margin + '%';
   document.getElementById('dashBulan').textContent = rp(untungBulan);
-  document.getElementById('dashKas').textContent = rp(state.saldoKas);
+  document.getElementById('dashKas').textContent = rp(state.totalDana ?? state.saldoKas);
+  document.getElementById('dashDanaRincian').textContent = `blu ${rp(state.saldoKas)} · QRIS belum cair ${rp(state.saldoQris || 0)}`;
 
   renderNotifications();
 
@@ -2263,6 +2284,9 @@ function showMoreCashHistory() {
 
 function renderCashOverview() {
   document.getElementById('saldoKasDisplay').textContent = rp(state.saldoKas);
+  document.getElementById('saldoQrisDisplay').textContent = rp(state.saldoQris || 0);
+  document.getElementById('totalDanaDisplay').textContent = rp(state.totalDana ?? state.saldoKas);
+  document.getElementById('qrisSettleButton').disabled = !(state.saldoQris > 0);
 
   const mutasi = state.mutasiKas.slice().sort((a,b) => String(b.createdAt || b.tanggal+'T'+b.waktu).localeCompare(String(a.createdAt || a.tanggal+'T'+a.waktu))).slice(0,cashHistoryLimit);
   const container = document.getElementById('kasMutasiList');
@@ -2278,10 +2302,11 @@ function renderCashOverview() {
   }
 
   container.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Tanggal</th><th>Keterangan</th><th>Masuk</th><th>Keluar</th><th>Saldo</th></tr></thead>
+    <thead><tr><th>Tanggal</th><th>Akun</th><th>Keterangan</th><th>Masuk</th><th>Keluar</th><th>Saldo akun</th></tr></thead>
     <tbody>
     ${mutasi.map(m=>`<tr>
       <td style="white-space:nowrap">${m.tanggal}<br><span style="font-size:10px;color:var(--abu2)">${m.waktu}</span></td>
+      <td>${safeText(m.akun || 'blu')}</td>
       <td style="font-size:12px">${safeText(m.keterangan)}</td>
       <td class="${m.jenis==='masuk'?'kas-in':''}">${m.jenis==='masuk'?rp(m.jumlah):'-'}</td>
       <td class="${m.jenis==='keluar'?'kas-out':''}">${m.jenis==='keluar'?rp(m.jumlah):'-'}</td>
@@ -2289,6 +2314,29 @@ function renderCashOverview() {
     </tr>`).join('')}
     </tbody>
   </table></div>`;
+}
+
+async function simpanPencairanQris() {
+  const grossAmount = Number(document.getElementById('qrisGross').value);
+  const netAmount = Number(document.getElementById('qrisNet').value);
+  if (![grossAmount,netAmount].every(v => Number.isFinite(v) && v > 0 && Math.abs(v*100-Math.round(v*100)) < 0.000001) || netAmount > grossAmount || grossAmount > Number(state.saldoQris || 0)) {
+    showToast('Isi nominal QRIS dan nominal bersih yang valid. Nominal bersih tidak boleh melebihi pencairan atau saldo QRIS.', 'error');
+    return;
+  }
+  if (!confirm(`Pastikan ${rp(netAmount)} sudah masuk blu. Saldo QRIS berkurang ${rp(grossAmount)}; biaya ${rp(grossAmount-netAmount)}. Lanjut catat?`)) return;
+  const button = document.getElementById('qrisSettleButton');
+  const fingerprint = `${grossAmount}:${netAmount}`;
+  if (button.dataset.fingerprint !== fingerprint) {
+    button.dataset.fingerprint = fingerprint;
+    button.dataset.settlementKey = crypto.randomUUID();
+  }
+  const ok = await runV2Mutation('Mencatat pencairan QRIS...', () => window.kopsusrenServices.settleQris({grossAmount,netAmount,idempotencyKey:button.dataset.settlementKey}), 'Pencairan QRIS ke blu tercatat');
+  if (ok) {
+    document.getElementById('qrisGross').value = '';
+    document.getElementById('qrisNet').value = '';
+    delete button.dataset.fingerprint;
+    delete button.dataset.settlementKey;
+  }
 }
 
 // ============= PENGELUARAN =============
@@ -2302,7 +2350,7 @@ function renderPengeluaran() {
   const accountSelect = document.getElementById('belAccount');
   if (accountSelect) {
     const selectedAccount = accountSelect.value;
-    accountSelect.innerHTML = (state.accounts || []).filter(a => a.type !== 'QRIS').map(a =>
+    accountSelect.innerHTML = (state.accounts || []).filter(a => a.type === 'CASH' || (a.type === 'BANK' && Number(a.balance) !== 0)).map(a =>
       `<option value="${a.id}">${safeText(a.name)} · ${rp(a.balance)}</option>`
     ).join('');
     if ((state.accounts || []).some(a => a.id === selectedAccount && a.type !== 'QRIS')) accountSelect.value = selectedAccount;
@@ -2455,7 +2503,7 @@ async function simpanPemasukan() {
 
   if (state.isV2) {
     const cash = state.accounts.find(account => account.type === 'CASH');
-    if (!cash) { showToast('Akun kas aktif tidak ditemukan','error'); return; }
+    if (!cash) { showToast('Akun blu aktif tidak ditemukan','error'); return; }
     const ok = await runV2Mutation('Mencatat pemasukan...', () => window.kopsusrenServices.adjustAccount({
       accountId: cash.id, amount: jumlah, reason: ket || 'Pemasukan lain'
     }), 'Pemasukan dicatat!');
@@ -2657,7 +2705,9 @@ ${Object.entries(bahanTerpakai).map(([bid,jml])=>{
 <table>
 <thead><tr><th>Item</th><th>Nilai</th></tr></thead>
 <tbody>
-<tr><td>Saldo Kas Saat Laporan Dibuat</td><td><strong>${rp(state.saldoKas)}</strong></td></tr>
+<tr><td>Saldo blu Saat Laporan Dibuat</td><td><strong>${rp(state.saldoKas)}</strong></td></tr>
+<tr><td>QRIS belum cair</td><td>${rp(state.saldoQris || 0)}</td></tr>
+<tr><td>Total Dana Usaha</td><td>${rp(state.totalDana ?? state.saldoKas)}</td></tr>
 ${totalTips>0?`<tr><td>Total Tips</td><td>${rp(totalTips)}</td></tr>`:''}
 </tbody></table>
 
@@ -2718,12 +2768,12 @@ async function setSaldoAwal() {
   if(isNaN(val)) { showToast('Masukkan angka yang valid!','error'); return; }
   const selisih = val - state.saldoKas;
   if (state.isV2) {
-    if (selisih === 0) { showToast('Saldo kas sudah sesuai'); return; }
+    if (selisih === 0) { showToast('Saldo blu sudah sesuai'); return; }
     const cash = state.accounts.find(account => account.type === 'CASH');
-    if (!cash) { showToast('Akun kas aktif tidak ditemukan','error'); return; }
-    const ok = await runV2Mutation('Menyesuaikan saldo kas...', () => window.kopsusrenServices.adjustAccount({
-      accountId: cash.id, amount: selisih, reason: 'Penyesuaian saldo kas'
-    }), `Saldo kas diset ke ${rp(val)}`);
+    if (!cash) { showToast('Akun blu aktif tidak ditemukan','error'); return; }
+    const ok = await runV2Mutation('Menyesuaikan saldo blu...', () => window.kopsusrenServices.adjustAccount({
+      accountId: cash.id, amount: selisih, reason: 'Penyesuaian saldo blu'
+    }), `Saldo blu diset ke ${rp(val)}`);
     if (ok) {
       document.getElementById('setSaldo').value='';
     }
@@ -2737,7 +2787,7 @@ async function setSaldoAwal() {
   });
   saveState();
   document.getElementById('setSaldo').value='';
-  showToast(`Saldo kas diset ke ${rp(val)}`);
+  showToast(`Saldo blu diset ke ${rp(val)}`);
 }
 
 function exportData() {
@@ -2836,7 +2886,7 @@ async function exportPenjualanCSV() {
         menuNama: entry.product_name,
         hargaSatuan: Number(entry.unit_price),
         keterangan: entry.notes,
-        bayar: entry.payment_method === 'CASH' ? 'Cash' : 'QRIS',
+        bayar: entry.payment_method === 'CASH' ? 'Transfer blu' : 'QRIS',
       }));
     } catch (error) {
       showToast(error.message || 'Export penjualan gagal', 'error');
