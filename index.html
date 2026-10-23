@@ -22,7 +22,7 @@
 <link rel="stylesheet" href="styles.css?v=20261018-notification-popup">
 <meta charset="UTF-8">
 <title>Baristack App</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js" onload="if (window.baristackDataReady && activePage === 'dashboard') renderDashboard()"></script>
 <script src="/src/services/kopsusren.js?v=20261022-blu-qris"></script>
 <script>
   window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
@@ -189,7 +189,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
 
   <div class="card">
     <div class="card-title">Penjualan Per Menu (7 Hari)</div>
-    <div class="chart-wrap"><canvas id="chartDashboard" role="img" aria-label="Grafik penjualan per menu 7 hari terakhir">Grafik penjualan.</canvas></div>
+    <div class="chart-wrap" id="chartWrap"><canvas id="chartDashboard" role="img" aria-label="Grafik penjualan per menu 7 hari terakhir">Grafik penjualan.</canvas></div>
   </div>
 
   <div class="card">
@@ -1089,6 +1089,7 @@ async function loadState() {
     state = legacyStateFromV2(data);
     state.laporanList = cachedState?.laporanList || [];
     localStorage.setItem('kopiManagerV2Cache', JSON.stringify(state));
+    window.baristackLastRefreshAt = Date.now();
     updateSyncStatus(true);
   } catch (error) {
     state = cachedState?.isV2 ? cachedState : legacyStateFromV2({
@@ -1214,17 +1215,24 @@ function showToast(msg, type='success') {
   }, 3000);
 }
 
+let loadingTimer = null;
 function showLoading(text = 'Memuat data...') {
   const overlay = document.getElementById('loadingOverlay');
   const textEl = document.getElementById('loadingText');
-  if (overlay) {
-    overlay.classList.add('open');
-    overlay.setAttribute('aria-hidden', 'false');
-  }
+  clearTimeout(loadingTimer);
   if (textEl) textEl.textContent = text;
+  loadingTimer = setTimeout(() => {
+    if (overlay) {
+      overlay.classList.add('open');
+      overlay.setAttribute('aria-hidden', 'false');
+    }
+    loadingTimer = null;
+  }, 250);
 }
 
 function hideLoading() {
+  clearTimeout(loadingTimer);
+  loadingTimer = null;
   const overlay = document.getElementById('loadingOverlay');
   if (overlay) {
     overlay.classList.remove('open');
@@ -1495,6 +1503,7 @@ async function runV2Mutation(loadingText, work, successText) {
   showLoading(loadingText);
   try {
     const result = await work();
+    showLoading('Memperbarui tampilan...');
     try {
       await refreshV2();
       renderPage(activePage);
@@ -1796,9 +1805,20 @@ function renderDashboard() {
   }));
 
   if (typeof Chart === 'undefined') {
-    if (!document.getElementById('chartDashboard')) return;
-    document.getElementById('chartDashboard').parentElement.innerHTML = '<p class="empty-state">Grafik belum tersedia. Detail penjualan tetap bisa dilihat di Riwayat Penjualan.</p>';
+    const chart = document.getElementById('chartDashboard');
+    if (chart) chart.parentElement.innerHTML = '<p class="empty-state">Grafik belum tersedia. Detail penjualan tetap bisa dilihat di Riwayat Penjualan.</p>';
     return;
+  }
+  if (!document.getElementById('chartDashboard')) {
+    const chartWrap = document.getElementById('chartWrap');
+    if (chartWrap) {
+      const canvas = document.createElement('canvas');
+      canvas.id = 'chartDashboard';
+      canvas.setAttribute('role', 'img');
+      canvas.setAttribute('aria-label', 'Grafik penjualan per menu 7 hari terakhir');
+      canvas.textContent = 'Grafik penjualan.';
+      chartWrap.replaceChildren(canvas);
+    }
   }
   if (!document.getElementById('chartDashboard')) return;
   if(dashChart) dashChart.destroy();
@@ -1818,10 +1838,12 @@ let v2RefreshInFlight = false;
 async function autoRefreshV2() {
   if (document.hidden || !getToken() || v2MutationInFlight || v2RefreshInFlight) return;
   if (document.querySelector('.modal-backdrop.open') || document.activeElement?.matches('input, select, textarea')) return;
+  const refreshInterval = activePage === 'po' || activePage === 'approval' ? 20000 : 60000;
+  if (Date.now() - (window.baristackLastRefreshAt || 0) < refreshInterval) return;
   v2RefreshInFlight = true;
   try {
-    await refreshV2();
-    if (!v2MutationInFlight && !document.querySelector('.modal-backdrop.open') && !document.activeElement?.matches('input, select, textarea')) renderPage(activePage);
+    const updated = await refreshV2();
+    if (updated !== false && !v2MutationInFlight && !document.querySelector('.modal-backdrop.open') && !document.activeElement?.matches('input, select, textarea')) renderPage(activePage);
   } catch {
     updateSyncStatus(false);
   } finally {
@@ -1829,17 +1851,21 @@ async function autoRefreshV2() {
   }
 }
 async function refreshV2() {
+  const refreshSeq = window.baristackRefreshSeq = (window.baristackRefreshSeq || 0) + 1;
   const previousState = state || {};
   // Selalu ambil snapshot penuh setelah mutation. Partial PO refresh pernah
   // membuat saldo terbaru tetapi riwayat ledger/pembelian masih memakai cache.
   const data = await window.kopsusrenServices.bootstrap();
+  if (refreshSeq !== window.baristackRefreshSeq) return false;
   const nextState = legacyStateFromV2(data);
   state = nextState;
   const savedReports = previousState?.laporanList || [];
   state.laporanList = savedReports;
   localStorage.setItem('kopiManagerV2Cache', JSON.stringify(state));
+  window.baristackLastRefreshAt = Date.now();
   updateSyncStatus(true);
   renderNotifications();
+  return true;
 }
 
 // ============= RIWAYAT =============
@@ -2979,6 +3005,7 @@ async function initApp() {
   loginScreen.setAttribute('aria-hidden', 'true');
   document.body.classList.remove('auth-locked');
   await loadState();
+  window.baristackDataReady = true;
   recalcSyrupHPP();
   saveState();
   document.getElementById('topDate').textContent = formatDate(today());
