@@ -1,4 +1,4 @@
-FROM node:22-bookworm-slim AS build
+FROM node:22.23.4-bookworm-slim AS build
 
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -10,7 +10,7 @@ COPY db ./db
 COPY services ./services
 RUN npx tsc -p tsconfig.docker.json
 
-FROM node:22-bookworm-slim AS runtime-deps
+FROM node:22.23.4-bookworm-slim AS runtime-deps
 
 WORKDIR /app
 ENV NODE_ENV=production

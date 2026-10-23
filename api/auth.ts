@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { verifyPassword, createToken } from "./_auth.js";
+import { verifyPassword, createToken, verifyToken, extractToken } from "./_auth.js";
 
 const VALID_USERNAME = process.env.VALID_USERNAME || "shidqifa";
 
@@ -17,6 +17,7 @@ function clientKey(req: VercelRequest) {
 
 function currentAttempt(key: string, now = Date.now()) {
   const existing = loginAttempts.get(key);
+  if (existing && existing.blockedUntil > now) return existing;
   if (!existing || existing.resetAt <= now) {
     const fresh = { count: 0, resetAt: now + LOGIN_WINDOW_MS, blockedUntil: 0 };
     loginAttempts.set(key, fresh);
@@ -33,11 +34,20 @@ function pruneAttempts(now = Date.now()) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Cache-Control', 'no-store');
+  if (req.method === 'GET') {
+    const auth = verifyToken(extractToken(req) || '');
+    if (!auth.valid || auth.username !== VALID_USERNAME) return res.status(401).json({ok:false,error:'Unauthorized'});
+    return res.status(200).json({ok:true,nodeVersion:process.versions.node});
+  }
   if (req.method !== "POST") {
     return res.status(405).send("Method not allowed");
   }
 
   const { username = "", password = "" } = req.body || {};
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ok:false,error:'Username dan password harus berupa teks'});
+  }
   const key = clientKey(req);
   const now = Date.now();
   const attempt = currentAttempt(key, now);

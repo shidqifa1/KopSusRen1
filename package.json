@@ -29,5 +29,11 @@
     "@vercel/node": "^5.8.9",
     "drizzle-kit": "beta",
     "vercel": "^59.11.2"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "overrides": {
+    "tar": "^7.5.21"
   }
 }
