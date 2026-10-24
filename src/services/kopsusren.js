@@ -45,6 +45,7 @@
     setPoStatus: (poSessionId, status) => command('set_po_status', { poSessionId, status }),
     adjustInventory: payload => command('adjust_inventory', payload),
     adjustAccount: payload => command('adjust_account', payload),
+    settleQris: payload => command('settle_qris', payload),
     updateIngredient: payload => command('update_ingredient', payload),
     updateProductRecipe: payload => command('update_product_recipe', payload),
     importSales: payload => command('import_sales', payload),
