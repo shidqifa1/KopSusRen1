@@ -111,6 +111,21 @@ test('background redraw preserves product, ingredient and payment account select
   assert.equal(node('belBahan').value,'susu');
   assert.equal(node('belAccount').value,'cash');
 });
+test('PO with fulfilled orders does not show an empty production card or suggest manual PO input', () => {
+  const {context,node}=appHarness();
+  vm.runInContext("state.poSessions=[{id:'po-1',status:'OPEN',summary:{totalCups:1,productionMenuTotals:[],productionIngredientTotals:[]}}];state.orders=[{id:'order-1',po_session_id:'po-1',status:'FULFILLED',payment_status:'PAID',items:[]}];",context);
+  context.renderPo();
+  assert.doesNotMatch(node('poOrders').innerHTML,/Kebutuhan produksi aktif/);
+  assert.doesNotMatch(node('poActiveOrdersPanel').innerHTML,/input manual/);
+});
+test('expense account defaults to the main blu balance when an older bank balance also exists', () => {
+  const {context,node}=appHarness();
+  vm.runInContext("state.accounts=[{id:'bank',name:'Blu',type:'BANK',balance:100000},{id:'cash',name:'blu',type:'CASH',balance:50000}];",context);
+  context.renderPengeluaran();
+  assert.equal(node('belAccount').innerHTML.match(/value=\"([^\"]+)/)?.[1],'cash');
+  assert.equal(node('belAccount').value,'cash');
+  assert.match(node('belAccount').innerHTML,/akun terpisah/);
+});
 test('dashboard renders even when the chart CDN is unavailable', () => {
   const {context,node}=appHarness();
   vm.runInContext('Chart = undefined;',context);

@@ -1442,7 +1442,7 @@ function renderPoActiveOrdersPanel(openSessions, poOrders) {
           ${!paid ? `<button class="btn btn-primary btn-sm" onclick="konfirmasiPembayaran('${order.id}')">Lunas</button>` : `<button class="btn btn-outline btn-sm" onclick="selesaikanOrder('${order.id}')">Selesai</button>`}
         </div>
       </div>`;
-    }).join('') : '<div class="po-empty-mini">Belum ada order di PO aktif. Kirim order dari WhatsApp atau input manual.</div>'}
+    }).join('') : '<div class="po-empty-mini">Belum ada pesanan di PO aktif. Pesanan WhatsApp akan muncul di sini; penjualan langsung tercatat terpisah.</div>'}
   </div>`;
 }
 
@@ -1468,11 +1468,13 @@ function renderPo() {
   renderPoActivePanel(openSessions, sessions);
   renderPoActiveOrdersPanel(openSessions, poOrders);
   const poSummary = active?.summary || null;
-  const productionHtml = poSummary?.totalCups ? `
+  const productionMenuTotals = poSummary?.productionMenuTotals || poSummary?.menuTotals || [];
+  const productionIngredientTotals = poSummary?.productionIngredientTotals || poSummary?.ingredientTotals || [];
+  const productionHtml = active && (productionMenuTotals.length || productionIngredientTotals.length) ? `
     <div class="card po-production">
       <div class="card-title">Kebutuhan produksi aktif</div>
-      <div class="po-menu-chips">${(poSummary.productionMenuTotals || poSummary.menuTotals || []).map(item => `<div class="po-menu-chip">${safeText(item.name)}<strong>${item.quantity} cup</strong></div>`).join('')}</div>
-      <div class="po-ingredient-list">${(poSummary.productionIngredientTotals || poSummary.ingredientTotals || []).map(item => `<div><span>${safeText(item.name)}</span><strong>${Number(Number(item.quantity).toFixed(2))} ${safeText(item.unit)}</strong></div>`).join('')}</div>
+      <div class="po-menu-chips">${productionMenuTotals.map(item => `<div class="po-menu-chip">${safeText(item.name)}<strong>${item.quantity} cup</strong></div>`).join('')}</div>
+      <div class="po-ingredient-list">${productionIngredientTotals.map(item => `<div><span>${safeText(item.name)}</span><strong>${Number(Number(item.quantity).toFixed(2))} ${safeText(item.unit)}</strong></div>`).join('')}</div>
     </div>` : '';
 
   document.getElementById('poQueueHint').textContent = `${activeOrders.length} aktif · ${poOrders.length} total`;
@@ -2376,10 +2378,13 @@ function renderPengeluaran() {
   const accountSelect = document.getElementById('belAccount');
   if (accountSelect) {
     const selectedAccount = accountSelect.value;
-    accountSelect.innerHTML = (state.accounts || []).filter(a => a.type === 'CASH' || (a.type === 'BANK' && Number(a.balance) !== 0)).map(a =>
-      `<option value="${a.id}">${safeText(a.name)} · ${rp(a.balance)}</option>`
+    const availableAccounts = (state.accounts || [])
+      .filter(a => a.type === 'CASH' || (a.type === 'BANK' && Number(a.balance) !== 0))
+      .sort((a, b) => (a.type === 'CASH' ? 0 : 1) - (b.type === 'CASH' ? 0 : 1));
+    accountSelect.innerHTML = availableAccounts.map(a =>
+      `<option value="${a.id}">${safeText(a.name)}${a.type === 'BANK' ? ' (akun terpisah)' : ''} · ${rp(a.balance)}</option>`
     ).join('');
-    if ((state.accounts || []).some(a => a.id === selectedAccount && a.type !== 'QRIS')) accountSelect.value = selectedAccount;
+    accountSelect.value = availableAccounts.some(a => a.id === selectedAccount) ? selectedAccount : (availableAccounts[0]?.id || '');
   }
 
   // PASANG EVENT LISTENER UNTUK PREVIEW HARGA (HAPUS YANG LAMA DULU)
