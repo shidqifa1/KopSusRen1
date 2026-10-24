@@ -161,6 +161,10 @@ test('live bootstrap preserves table result shapes during concurrent requests',{
     assert.ok(Array.isArray(snapshot[table]),table);
     for(const row of snapshot[table])for(const key of keys)assert.ok(Object.hasOwn(row,key),`${table} lost ${key}`);
    }
+   for(const order of snapshot.orders)for(const item of order.items){
+    assert.ok(Object.hasOwn(item,'unit_cost_snapshot'),'order item lost saved HPP');
+    assert.ok(Object.hasOwn(item,'cost_is_estimate'),'order item lost HPP estimate flag');
+   }
    if(snapshot.gatewayStatus)assert.equal(snapshot.gatewayStatus.provider,'baileys');
   }
  }finally{clearTimeout(timer);await sql.end({timeout:2});await db.$client.end({timeout:2});}

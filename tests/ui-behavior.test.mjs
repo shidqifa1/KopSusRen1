@@ -35,6 +35,28 @@ test('sale details use the sale cost including no-ice adjustments', () => {
   assert.match(content,/>1234</);
   assert.match(content,/>6766</);
 });
+test('fulfilled sales keep their saved HPP after ingredient prices change', () => {
+  const base = {
+    products:[{id:'americano',code:'AMERICANO',name:'Americano',price:8000,is_active:true}],
+    recipes:[{product_id:'americano',ingredient_id:'coffee',quantity:7}],
+    orders:[{id:'sale-1',status:'FULFILLED',created_at:'2026-10-24T00:00:00Z',payment_method:'CASH',items:[
+      {order_item_id:'item-1',product_id:'americano',product_name:'Americano',quantity:1,unit_price:8000,unit_cost_snapshot:750,cost_is_estimate:false},
+    ]}],accounts:[],purchases:[],poSessions:[],
+  };
+  const result = cost => run('legacyStateFromV2', {Date,DEFAULT_BAHAN:[],DEFAULT_MENU:[]}, {
+    ...base,ingredients:[{id:'coffee',code:'COFFEE',name:'Kopi',unit:'g',average_cost:cost,physical_stock:100}],
+  }).penjualan[0];
+  assert.equal(result(10).modal,750);
+  assert.equal(result(100).modal,750);
+  assert.equal(result(100).hppEstimated,false);
+});
+test('legacy sales expose their frozen cost as an estimate in transaction details', () => {
+  let content;
+  run('showDetail', { state:{isV2:true,penjualan:[{id:'old',modal:1200,hppEstimated:true,totalHarga:8000}]},
+    document:{getElementById:id=>id === 'modalDetailContent' ? {set innerHTML(v){content=v;}} : {}},
+    getMenu:()=>({}), hitungModalMenu:()=>9999, rp:String, safeText:String, formatDate:String, openModal:()=>{} }, 'old');
+  assert.match(content,/HPP perkiraan/);
+});
 test('automatic refresh waits while a form, dialog, or mutation is active', async () => {
   for (const mode of ['input','modal','mutation','refresh']) {
     let calls=0;

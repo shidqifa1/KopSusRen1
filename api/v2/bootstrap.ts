@@ -29,6 +29,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                    'order_item_id', oi.id,
                    'product_id', pr.id, 'product_code', pr.code, 'product_name', pr.name,
                    'quantity', oi.qty, 'unit_price', oi.unit_price::float8,
+                   'unit_cost_snapshot', oi.unit_cost_snapshot::float8,
+                   'cost_is_estimate', oi.cost_is_estimate,
                    'no_ice', oi.no_ice, 'notes', oi.notes
                  ) order by oi.created_at) filter (where oi.id is not null), '[]') as items
           from orders o

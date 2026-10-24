@@ -976,11 +976,14 @@ function legacyStateFromV2(data) {
     (o.items || []).forEach(item => {
       const dt = new Date(o.created_at);
       const product = menu.find(m => m.id === item.product_id);
-      const modalPerCup = 500 + (product?.resep || []).reduce((total, recipeItem) => {
+      const currentCost = 500 + (product?.resep || []).reduce((total, recipeItem) => {
         const ingredient = bahan.find(b => b.id === recipeItem.bahanId);
         if (!ingredient || (item.no_ice && ingredient.code === 'ICE')) return total;
         return total + ingredient.hargaBeli * recipeItem.jumlah;
       }, 0);
+      const hasSavedCost = item.unit_cost_snapshot != null && Number.isFinite(Number(item.unit_cost_snapshot));
+      const modalPerCup = hasSavedCost ? Number(item.unit_cost_snapshot) : currentCost;
+      const hppEstimated = !hasSavedCost || item.cost_is_estimate !== false;
       const quantity = Math.max(1, Number(item.quantity) || 1);
       for (let cupNumber = 1; cupNumber <= quantity; cupNumber += 1) {
         penjualan.push({
@@ -996,6 +999,7 @@ function legacyStateFromV2(data) {
           jumlah: 1,
           totalHarga: Number(item.unit_price),
           modal: modalPerCup,
+          hppEstimated,
           noIce: Boolean(item.no_ice),
           bayar: o.payment_method === 'CASH' ? 'Transfer blu' : 'QRIS',
           keterangan: o.notes || '',
@@ -1929,6 +1933,7 @@ function showDetail(id) {
       <div style="display:flex;justify-content:space-between"><span>Harga Satuan</span><span>${rp(p.hargaSatuan)}</span></div>
       <div style="display:flex;justify-content:space-between"><span>Total Bayar</span><strong style="color:var(--hijau)">${rp(p.totalHarga)}</strong></div>
       <div style="display:flex;justify-content:space-between"><span>Modal</span><span style="color:var(--abu)">${rp(modal)}</span></div>
+      ${p.hppEstimated ? '<div style="font-size:12px;color:var(--abu)">HPP perkiraan: biaya asli saat transaksi tidak tercatat; angka ini dibekukan dari data yang tersedia.</div>' : ''}
       <div style="display:flex;justify-content:space-between"><span>Keuntungan</span><strong style="color:var(--hijau)">${rp(p.totalHarga-modal)}</strong></div>
       <div style="display:flex;justify-content:space-between"><span>Metode Bayar</span><span>${safeText(p.bayar)}</span></div>
       ${p.keterangan?`<div style="display:flex;justify-content:space-between"><span>Keterangan</span><span>${safeText(p.keterangan)}</span></div>`:''}
@@ -2701,7 +2706,7 @@ footer{margin-top:30px;padding-top:10px;border-top:1px solid #D0C4B0;color:#888;
 <div class="sum-item"><div class="sum-label">Estimasi Keuntungan</div><div class="sum-val hijau">${rp(untung)}</div></div>
 </div>
 
-<p>Modal dan keuntungan adalah estimasi berdasarkan resep dan HPP saat ini.</p>
+<p>Modal dan keuntungan memakai HPP tersimpan per penjualan. ${penjHari.some(p => p.hppEstimated) ? 'Penjualan lama bertanda HPP perkiraan memakai biaya yang dibekukan saat pembaruan sistem, bukan biaya asli tanggal transaksi.' : 'Biaya bahan dikunci saat pesanan dicatat.'}</p>
 <h2>Daftar Penjualan</h2>
 <table>
 <thead><tr><th>No</th><th>Customer</th><th>Kelas</th><th>Menu</th><th>Harga</th><th>Metode</th><th>Ket</th></tr></thead>
