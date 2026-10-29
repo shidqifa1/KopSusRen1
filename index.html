@@ -210,22 +210,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <label for="filterCustomer">Cari Customer</label>
     <input type="text" id="filterCustomer" placeholder="Nama customer..." oninput="renderRiwayat()">
   </div>
-  <details class="card" id="historicalSaleDetails">
-    <summary>Tambah penjualan yang tertinggal</summary>
-    <form id="historicalSaleForm" class="form-grid" onsubmit="submitHistoricalSale(event)">
-      <p class="form-help field-wide">Catatan historis tidak mengurangi stok dan tidak mengubah saldo blu/QRIS. Kalau perlu koreksi kas, catat terpisah di Belanja & Pengeluaran. HPP akan memakai perkiraan hari ini.</p>
-      <div class="field"><label for="historicalSaleDate">Tanggal penjualan</label><input type="date" id="historicalSaleDate" required></div>
-      <div class="field"><label for="historicalSaleTime">Jam</label><input type="time" id="historicalSaleTime" value="12:00" required></div>
-      <div class="field"><label for="historicalSaleCustomer">Nama customer</label><input id="historicalSaleCustomer" maxlength="120" value="Anonim" required></div>
-      <div class="field"><label for="historicalSaleClass">Kelas (opsional)</label><input id="historicalSaleClass" maxlength="40"></div>
-      <div class="field field-wide"><label for="historicalSaleProduct">Menu</label><select id="historicalSaleProduct" onchange="historicalSaleProductChanged()" required></select></div>
-      <div class="field"><label for="historicalSaleQuantity">Jumlah cup</label><input type="number" id="historicalSaleQuantity" min="1" max="100" step="1" value="1" required></div>
-      <div class="field"><label for="historicalSalePrice">Harga per cup (Rp)</label><input type="number" id="historicalSalePrice" min="0" step="1" required></div>
-      <div class="field"><label for="historicalSalePayment">Pembayaran</label><select id="historicalSalePayment"><option value="CASH">Cash</option><option value="QRIS">QRIS</option></select></div>
-      <div class="field field-wide"><label for="historicalSaleNotes">Catatan (opsional)</label><input id="historicalSaleNotes" maxlength="300"></div>
-      <div class="field-wide"><button class="btn btn-primary btn-full" id="historicalSaleSubmit" type="submit">Simpan penjualan lama</button></div>
-    </form>
-  </details>
+  <div class="card"><button type="button" class="btn btn-primary" id="historicalSaleButton" onclick="bukaPenjualanHistoris()">+ Tambah penjualan tertinggal</button></div>
   <div id="riwayatList"></div>
   <div class="page-bottom"></div>
 </div>
@@ -1907,22 +1892,6 @@ let riwayatDetailId = null;
 function renderRiwayat() {
   const filterTgl = document.getElementById('filterTanggal').value;
   const filterCust = document.getElementById('filterCustomer').value.toLowerCase();
-  const historicalDate = document.getElementById('historicalSaleDate');
-  if (historicalDate && !historicalDate.value) historicalDate.value = today();
-  const historicalProduct = document.getElementById('historicalSaleProduct');
-  if (historicalProduct) {
-    const selectedProduct = historicalProduct.value;
-    historicalProduct.innerHTML = state.menu.map(menu => `<option value="${menu.id}">${safeText(menu.nama)} · ${rp(menu.harga)}</option>`).join('');
-    if (state.menu.some(menu => menu.id === selectedProduct)) historicalProduct.value = selectedProduct;
-    else if (state.menu.length) historicalProduct.value = state.menu[0].id;
-    const selectedMenu = state.menu.find(menu => menu.id === historicalProduct.value);
-    const priceInput = document.getElementById('historicalSalePrice');
-    if (priceInput && !priceInput.dataset.initialized && selectedMenu) {
-      priceInput.value = String(selectedMenu.harga);
-      priceInput.dataset.initialized = 'true';
-    }
-  }
-
   let data = state.penjualan.slice().reverse();
   if(filterTgl) data = data.filter(p=>p.tanggal===filterTgl);
   if(filterCust) data = data.filter(p=>p.customer.toLowerCase().includes(filterCust));
@@ -1961,6 +1930,30 @@ function renderRiwayat() {
     </div>`).join('');
 }
 
+function bukaPenjualanHistoris() {
+  if (!state.menu.length) return showToast('Belum ada menu aktif untuk dicatat', 'error');
+  const menuOptions = state.menu.map(menu => `<option value="${safeText(menu.id)}">${safeText(menu.nama)} · ${rp(menu.harga)}</option>`).join('');
+  document.getElementById('modalDetailTitle').textContent = 'Tambah penjualan tertinggal';
+  document.getElementById('modalDetailContent').innerHTML = `
+    <form id="historicalSaleForm" class="form-grid" onsubmit="submitHistoricalSale(event)">
+      <p class="form-help field-wide">Cash menambah saldo blu. QRIS masuk saldo belum cair. HPP memakai perkiraan saat ini; stok tidak berubah.</p>
+      <div class="field"><label for="historicalSaleDate">Tanggal</label><input type="date" id="historicalSaleDate" value="${today()}" required></div>
+      <div class="field"><label for="historicalSaleTime">Jam</label><input type="time" id="historicalSaleTime" value="12:00" required></div>
+      <div class="field"><label for="historicalSaleCustomer">Nama customer</label><input id="historicalSaleCustomer" maxlength="120" value="Anonim" required></div>
+      <div class="field"><label for="historicalSaleClass">Kelas (opsional)</label><input id="historicalSaleClass" maxlength="40"></div>
+      <div class="field field-wide"><label for="historicalSaleProduct">Menu</label><select id="historicalSaleProduct" onchange="historicalSaleProductChanged()" required>${menuOptions}</select></div>
+      <div class="field"><label for="historicalSaleQuantity">Jumlah cup</label><input type="number" id="historicalSaleQuantity" min="1" max="100" step="1" value="1" required></div>
+      <div class="field"><label for="historicalSalePrice">Harga per cup (Rp)</label><input type="number" id="historicalSalePrice" min="0" step="1" value="${Number(state.menu[0].harga)||0}" required></div>
+      <div class="field"><label for="historicalSalePayment">Pembayaran</label><select id="historicalSalePayment"><option value="CASH">Cash</option><option value="QRIS">QRIS</option></select></div>
+      <div class="field field-wide"><label for="historicalSaleNotes">Catatan (opsional)</label><input id="historicalSaleNotes" maxlength="300"></div>
+      <div class="field-wide"><button class="btn btn-primary btn-full" id="historicalSaleSubmit" type="submit">Simpan penjualan</button></div>
+    </form>`;
+  document.getElementById('modalDetailContent').hidden = false;
+  document.getElementById('editSaleForm').hidden = true;
+  document.getElementById('saleDetailActions').hidden = true;
+  openModal('modalDetail');
+}
+
 function historicalSaleProductChanged() {
   const menu = getMenu(document.getElementById('historicalSaleProduct').value);
   if (menu) document.getElementById('historicalSalePrice').value = String(menu.harga);
@@ -1994,15 +1987,11 @@ async function submitHistoricalSale(event) {
     button.dataset.fingerprint = fingerprint;
     button.dataset.batchKey = crypto.randomUUID().replaceAll('-', '');
   }
-  const ok = await runV2Mutation('Menyimpan penjualan historis...', () => window.kopsusrenServices.importSales({batchKey:button.dataset.batchKey,rows}), `${quantity} cup penjualan historis tersimpan`);
+  const ok = await runV2Mutation('Menyimpan penjualan historis...', () => window.kopsusrenServices.recordHistoricalSales({batchKey:button.dataset.batchKey,rows}), `${quantity} cup penjualan historis tersimpan`);
   if (ok) {
     document.getElementById('filterTanggal').value = date;
-    document.getElementById('historicalSaleForm').reset();
-    document.getElementById('historicalSaleDate').value = today();
-    document.getElementById('historicalSaleTime').value = '12:00';
-    document.getElementById('historicalSaleCustomer').value = 'Anonim';
-    document.getElementById('historicalSaleQuantity').value = '1';
-    document.getElementById('historicalSalePrice').dataset.initialized = '';
+    closeModal('modalDetail');
+    riwayatDetailId = null;
     delete button.dataset.fingerprint;
     delete button.dataset.batchKey;
     renderRiwayat();

@@ -37,27 +37,35 @@ test('sale details use the sale cost including no-ice adjustments', () => {
   assert.match(content,/>1234</);
   assert.match(content,/>6766</);
 });
-test('sales history exposes date correction and a no-stock historical sale form', () => {
+test('sales history opens a focused historical-sale popup with correct money behavior', () => {
   const history = html.slice(html.indexOf('id="page-riwayat"'),html.indexOf('<!-- ============== KALKULATOR'));
-  assert.match(history,/id="historicalSaleForm"/);
-  assert.match(history,/id="historicalSaleDate"/);
-  assert.match(history,/id="historicalSaleQuantity"/);
-  assert.match(history,/tidak mengurangi stok dan tidak mengubah saldo/);
+  assert.match(history,/id="historicalSaleButton"/);
+  assert.doesNotMatch(history,/id="historicalSaleForm"/);
+  const popup = source('bukaPenjualanHistoris');
+  assert.match(popup,/historicalSaleForm/);
+  assert.match(popup,/modalDetail/);
+  assert.match(popup,/Cash menambah saldo blu/);
+  assert.match(popup,/QRIS masuk saldo belum cair/);
+  assert.match(popup,/stok tidak berubah/i);
   assert.match(html,/id="editSaleDetailsButton"/);
   assert.match(html,/id="editSaleDate"/);
   assert.match(serviceSource,/updateSaleDetails: payload => command\('edit_sale_details'/);
+  assert.match(serviceSource,/recordHistoricalSales: payload => command\('record_historical_sales'/);
   assert.match(commands,/"edit_sale_details"/);
+  assert.match(commands,/"record_historical_sales"/);
 });
 test('sale payment choices are only Cash and QRIS in direct and historical sales',()=>{
-  for(const id of ['orderPayment','historicalSalePayment']){
+  for(const id of ['orderPayment']){
     const match=html.match(new RegExp(`<select id="${id}"[^>]*>([\\s\\S]*?)<\\/select>`));
     assert.ok(match,`${id} exists`);
     assert.deepEqual([...match[1].matchAll(/<option value="([^"]+)"/g)].map(option=>option[1]),['CASH','QRIS']);
     assert.match(match[1],/>Cash(?: sudah diterima)?</);
   }
+  const historicalPopup=source('bukaPenjualanHistoris');
+  assert.match(historicalPopup,/<option value="CASH">Cash<\/option><option value="QRIS">QRIS<\/option>/);
   assert.doesNotMatch(html,/Transfer blu/);
 });
-test('adding a backdated sale sends each cup as a retry-safe historical import',async()=>{
+test('adding a backdated sale sends each cup for ledger-backed historical recording',async()=>{
   const {context,node}=appHarness();const submitted=[];
   node('historicalSaleDate').value='2026-10-20';node('historicalSaleTime').value='13:45';
   node('historicalSaleCustomer').value='Rani';node('historicalSaleClass').value='7A';
@@ -65,7 +73,8 @@ test('adding a backdated sale sends each cup as a retry-safe historical import',
   node('historicalSalePayment').value='QRIS';node('historicalSaleNotes').value='tertinggal';node('historicalSaleForm').reset=()=>{};
   context.crypto={randomUUID:()=> 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'};
   context.today=()=> '2026-10-29';context.showToast=()=>{};context.runV2Mutation=async(_message,work)=>{await work();return true;};
-  context.window.kopsusrenServices={importSales:async payload=>submitted.push(payload)};
+  context.closeModal=()=>{};context.renderRiwayat=()=>{};
+  context.window.kopsusrenServices={recordHistoricalSales:async payload=>submitted.push(payload)};
   await context.submitHistoricalSale({preventDefault(){}});
   assert.equal(submitted.length,1);
   assert.equal(submitted[0].rows.length,2);
@@ -272,6 +281,35 @@ test('sales import sends one parameterized batch and retains every row idempoten
   const batch=statements[0].values.find(value=>value?.json)?.json;
   assert.deepEqual(batch.map(row=>row.key),[0,1,2].map(i=>`csv-sale:${'a'.repeat(64)}:${i}`));
   assert.doesNotMatch(statements[0].query,/CUSTOMER-/);
+});
+test('manual historical sale adds matching payment entries to the Cash and QRIS balances',async()=>{
+  const action='record_historical_sales';
+  const start=commands.indexOf(`case "${action}": {`);assert.ok(start>=0,`${action} command exists`);
+  const end=commands.indexOf('\n      case ',start+1);const statements=[];
+  const db=async(parts,...values)=>{
+    const query=parts.join('?');statements.push({query,values});
+    if(query.includes('from accounts'))return [{id:'cash-account',type:'CASH'},{id:'qris-account',type:'QRIS'}];
+    if(query.includes('import_historical_sale'))return [{id:'cash-order'},{id:'qris-order'}];
+    return [];
+  };
+  db.json=value=>({json:JSON.parse(JSON.stringify(value))});
+  const body=commands.slice(start+`case "${action}": {`.length,end).trim().slice(0,-1);
+  const payload={batchKey:'b'.repeat(64),rows:[
+    {customerName:'CASH-CUSTOMER',productId:'product',unitPrice:8000,paymentMethod:'CASH',date:'2026-10-20T12:00:00+07:00'},
+    {customerName:'QRIS-CUSTOMER',productId:'product',unitPrice:9000,paymentMethod:'QRIS',date:'2026-10-20T13:00:00+07:00'},
+  ]};
+  let response;
+  const context=vm.createContext({payload,sql:{begin:callback=>callback(db),json:db.json},importRows:p=>p,
+    resolveProductId:async v=>v,importDate:v=>v,res:{status(){return this;},json(value){response=value;return value;}}});
+  await vm.runInContext(ts.transpile(`(async()=>{${body}})()`,{target:ts.ScriptTarget.ES2022}),context);
+  assert.equal(response.imported,2);
+  assert.deepEqual(Array.from(response.ids),['cash-order','qris-order']);
+  const ledger=statements.find(item=>item.query.includes('insert into ledger_entries'));
+  assert.ok(ledger,'manual sale inserts ledger entries in the same transaction');
+  assert.match(ledger.query,/on conflict do nothing/i);
+  const entries=ledger.values.find(value=>value?.json)?.json;
+  assert.deepEqual(entries.map(({accountType,amount})=>[accountType,amount]),[['CASH',8000],['QRIS',9000]]);
+  assert.deepEqual(entries.map(({orderId})=>orderId),['cash-order','qris-order']);
 });
 async function editSaleCommand(payload,{relatedCount=1,status='FULFILLED'}={}) {
   const start=commands.indexOf('case "edit_sale_details": {');assert.ok(start>=0,'edit_sale_details exists');

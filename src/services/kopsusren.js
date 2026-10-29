@@ -49,6 +49,7 @@
     settleQris: payload => command('settle_qris', payload),
     updateIngredient: payload => command('update_ingredient', payload),
     updateProductRecipe: payload => command('update_product_recipe', payload),
+    recordHistoricalSales: payload => command('record_historical_sales', payload),
     importSales: payload => command('import_sales', payload),
     importCash: payload => command('import_cash', payload),
     importSettings: payload => command('import_settings', payload),

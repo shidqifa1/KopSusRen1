@@ -13,7 +13,7 @@ const allowedActions = new Set([
   "edit_sale_details",
   "confirm_cash_payment", "complete_order", "void_order", "create_po", "open_po_now", "set_po_status",
   "adjust_inventory", "adjust_account", "settle_qris", "update_ingredient", "update_product_recipe", "run_po_maintenance", "gateway_heartbeat",
-  "import_sales", "import_cash", "import_settings",
+  "record_historical_sales", "import_sales", "import_cash", "import_settings",
   "chat_inbound", "approval_list", "approval_approve", "approval_reject",
 ]);
 
@@ -805,6 +805,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : [];
         rows = await sql`select update_product_recipe(${productId}, ${payload.price}, ${sql.json(items)}) as id`;
         break;
+      }
+      case "record_historical_sales": {
+        const imported=importRows(payload);
+        const prepared=await Promise.all(imported.rows.map(async (row: any,index: number)=>({
+          customerName:String(row.customerName||'Anonim').trim().slice(0,120)||'Anonim',
+          className:String(row.className||'').trim().slice(0,40)||null,
+          productId:await resolveProductId(row.productId||row.productCode||row.productName),
+          unitPrice:Number(row.unitPrice),
+          paymentMethod:/qris/i.test(String(row.paymentMethod||''))?'QRIS':'CASH',
+          notes:String(row.notes||'').trim().slice(0,300)||null,
+          occurredAt:importDate(row.date),
+          key:`manual-sale:${imported.batchKey}:${index}`,
+        })));
+        if (prepared.some(row=>!Number.isFinite(row.unitPrice)||row.unitPrice<0)) throw new Error('Harga penjualan tidak valid');
+        const result=await sql.begin(async db => {
+          const accounts=await db`select id,type from accounts where type in ('CASH','QRIS') and is_active order by created_at`;
+          const accountByType=new Map(accounts.map((account: any)=>[account.type,account.id]));
+          if (prepared.some(row=>!accountByType.has(row.paymentMethod))) throw new Error('Akun Cash atau QRIS aktif tidak ditemukan');
+          const importedOrders=await db`
+            select import_historical_sale(
+              item->>'customerName', item->>'className', (item->>'productId')::uuid,
+              (item->>'unitPrice')::numeric, item->>'paymentMethod', item->>'notes',
+              (item->>'occurredAt')::timestamptz, item->>'key'
+            ) id
+            from jsonb_array_elements(${db.json(prepared)}::jsonb) with ordinality as batch(item, position)
+            order by position`;
+          const ledgerRows=prepared.map((row,index)=>({
+            accountId:accountByType.get(row.paymentMethod),accountType:row.paymentMethod,
+            amount:row.unitPrice,orderId:importedOrders[index].id,
+            occurredAt:row.occurredAt,
+          }));
+          await db`
+            insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description,created_at)
+            select (item->>'accountId')::uuid,(item->>'amount')::numeric,'SALE','order',
+              (item->>'orderId')::uuid,'Penjualan historis',(item->>'occurredAt')::timestamptz
+            from jsonb_array_elements(${db.json(ledgerRows)}::jsonb) as batch(item)
+            on conflict do nothing`;
+          return importedOrders.map(row=>row.id);
+        });
+        return res.status(200).json({ok:true,imported:result.length,ids:result});
       }
       case "import_sales": {
         const imported=importRows(payload);
