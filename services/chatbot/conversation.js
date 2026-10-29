@@ -84,6 +84,76 @@ function mergeVariant(items,candidate) {
   return merged;
 }
 
+export function parseUsualOrderRequest(text) {
+  const value=normalize(text);
+  const reference=/\b(?:yang biasa|seperti biasa|kayak biasa|pesanan (?:biasa|terakhir|kemarin)|(?:sama|kayak|seperti) (?:yang )?(?:kemarin|terakhir))\b/;
+  if (!reference.test(value)) return null;
+  const rest=value.replace(reference,'').split(/\s+/).filter(word=>word&&!/^(aku|saya|gue|gua|mau|pesan|pesen|mesen|order|dong|ya|aja|lagi|cup|gelas|bang|bro|kak|mas)$/.test(word));
+  if (!rest.length) return {quantity:null,supported:true};
+  const quantity=/^\d+$/.test(rest[0])?Number(rest[0]):QUANTITY_WORDS[rest[0]];
+  return {quantity:Number.isInteger(quantity)?quantity:null,supported:rest.length===1&&Number.isInteger(quantity)&&quantity>0&&quantity<=100&&!/[+-]\s*\d/.test(String(text))};
+}
+
+// A previous order is a suggestion, never permission to create a new order.
+export function usualOrderReply({text,draft,history=[],products=[],availability=null}) {
+  const request=parseUsualOrderRequest(text);
+  const pending=draft?._usual_order_suggestion;
+  if (!request&&!pending) return null;
+  const next={...draft,items:[...(draft.items||[])],awaiting_confirmation:false};
+  delete next._confirmation_snapshot;
+  const stop=replyText=>{
+    delete next._usual_order_suggestion;
+    return {draft:next,replyText};
+  };
+  const value=normalize(text);
+  const confirmation=EXPLICIT_CONFIRMATIONS.has(value);
+  const declined=/^(bukan|batal|batalin|cancel|nggak|gak|ga|tidak|nggak jadi|ga jadi|gajadi)$/.test(value);
+  const quantityReply=pending&&!request?parseUsualOrderRequest(`yang biasa ${text}`):null;
+  if (!request&&!confirmation&&!declined&&!(quantityReply?.supported&&quantityReply.quantity)) return null;
+  if (!request&&declined) return stop('Oke, usulan tadi dibatalkan. Mau menu apa dan berapa cup?');
+  if (request&&next.items.length) return stop('Draft pesananmu masih ada. Sebutkan menu dan jumlah yang mau ditambah atau diubah dulu ya, biar nggak ketuker dengan pesanan sebelumnya.');
+  if (request&&!request.supported) return stop('Biar nggak salah, sebutkan menu, jumlah, dan catatannya ya. Pesanan belum kutambahkan.');
+
+  let suggestion=pending?{...pending}:null;
+  if (request) {
+    const last=history[0];
+    if (!last?.items?.length) return stop('Belum ada riwayat pesanan selesai dari nomor ini. Biasanya pesan menu apa dan berapa cup?');
+    if (last.items.length!==1) return stop('Pesanan terakhirmu punya beberapa menu atau varian. Yang mau diulang menu apa, catatannya apa, dan berapa cup?');
+    const old=last.items[0];
+    const notes=String(old.notes||'').split(',').map(note=>note.trim()).filter(Boolean);
+    const validation=validatedModifiers(notes);
+    if (validation.invalid.length) return stop('Pesanan terakhirmu punya catatan khusus. Sebutkan lagi menu dan catatannya ya, biar nggak salah salin.');
+    const modifiers=normalizedModifierSet(validation.valid,{noIce:Boolean(old.no_ice)});
+    suggestion={productId:old.product_id,modifiers,noIce:modifiers.includes('NO_ICE'),quantity:request.quantity,source_order_number:last.order_number};
+  } else if (quantityReply?.supported&&quantityReply.quantity) {
+    suggestion.quantity=quantityReply.quantity;
+  }
+  const product=products.find(item=>item.id===suggestion.productId&&item.is_active!==false);
+  const live=availability?.products?.find(item=>item.productId===suggestion.productId);
+  if (!product||live?.available===false||product.available===false) return stop('Menu pesanan terakhirmu sedang tidak tersedia. Mau pilih menu lain?');
+  const capacity=live?.availableQty??product.availableQty;
+  if (capacity!==null&&capacity!==undefined&&Number(capacity)<(suggestion.quantity||1)) return stop('Stok menu itu belum cukup untuk jumlah yang diminta. Mau pilih menu atau jumlah lain?');
+  next._usual_order_suggestion=suggestion;
+  if (!request&&confirmation&&suggestion.quantity) {
+    delete next._usual_order_suggestion;
+    next.items=[{productId:suggestion.productId,quantity:suggestion.quantity,modifiers:[...suggestion.modifiers],noIce:suggestion.noIce,notes:null}];
+    next.last_product_id=suggestion.productId;
+    next.last_unresolved=[];
+    next.last_ambiguities=[];
+    next.invalid_modifiers=[];
+    next._clarification_attempts=0;
+    next._parser_failure=false;
+    next.pending_question=missingFields(next)[0]||null;
+    next.awaiting_confirmation=missingFields(next).length===0;
+    return {draft:next,replyText:null};
+  }
+  const variant=suggestion.modifiers.map(modifier=>modifier.toLowerCase().replaceAll('_',' ')).join(', ');
+  const label=`${product.name}${variant?` (${variant})`:''}`;
+  const lead=`Di pesanan selesai terakhir #${suggestion.source_order_number}, menunya ${label}.`;
+  if (!suggestion.quantity) return {draft:next,replyText:`${lead}\nHarga sekarang ${rupiah(product.price)}/cup. Mau berapa cup?`};
+  return {draft:next,replyText:`${lead}\nMaksudnya ${suggestion.quantity}x ${label}, total ${rupiah(Number(product.price)*suggestion.quantity)}? Balas “iya” kalau benar, atau “bukan” untuk pilih menu lain. Ini belum masuk antrean ya.`};
+}
+
 export function simpleNameAnswer(text,draft,products) {
   if (draft?.pending_question !== 'name') return null;
   let candidate=String(text||'').trim().replace(/[!?.,;:]+$/g,'').trim();
@@ -170,6 +240,7 @@ function validatedModifiers(values) {
 export function applyStructuredPatch(previousDraft, parsed, menu) {
   const draft = { ...emptyDraft(previousDraft?.po_session_id), ...(previousDraft || {}), items: [...(previousDraft?.items || [])] };
   const hasItemOperations = Boolean(parsed?.entities?.item_operations?.length);
+  if (hasItemOperations) delete draft._usual_order_suggestion;
   const unresolved = [];
   const ambiguous = [];
   const invalidModifiers = [];
@@ -411,11 +482,19 @@ export function classifyDraftSafety(draft,{ unresolved=[],ambiguous=[],invalidMo
   };
 }
 
-export function authorizeOrderCommit({text,previousDraft,safety}) {
+export function orderConfirmationSnapshot(draft,menu) {
+  return JSON.stringify({
+    poSessionId:draft.po_session_id,name:draft.customer_name,className:draft.class_name,payment:draft.payment_method,
+    items:draftItemsForRpc(draft).map(item=>({...item,price:menu.find(product=>product.id===item.productId)?.price??null})),
+  });
+}
+
+export function authorizeOrderCommit({text,previousDraft,safety,menu=null}) {
   return isExplicitOrderConfirmation(text,previousDraft)
     && safety?.classification===SAFETY_CLASSIFICATION.SAFE
     && !safety.issues?.length
-    && !safety.missing?.length;
+    && !safety.missing?.length
+    && (!menu||previousDraft._confirmation_snapshot===orderConfirmationSnapshot(safety.draft,menu));
 }
 
 export function missingFields(draft) {
@@ -451,8 +530,9 @@ export function summarizeDraft(draft, menu) {
     const quantity = Number(item.quantity || 0);
     if (!quantity) hasUnknownQuantity = true;
     total += Number(product.price || 0)*quantity;
-    const modifiers = (item.modifiers || []).map(value => value.toLowerCase().replaceAll('_',' '));
-    lines.push(`• ${quantity || '?'}x ${product.name}${modifiers.length ? ` (${modifiers.join(', ')})` : ''} — ${quantity ? rupiah(Number(product.price)*quantity) : 'jumlah belum dipilih'}`);
+    const modifiers = normalizedModifierSet(item.modifiers,item).map(value => value.toLowerCase().replaceAll('_',' '));
+    const details=[...modifiers,item.notes?`catatan: ${item.notes}`:null].filter(Boolean);
+    lines.push(`• ${quantity || '?'}x ${product.name}${details.length ? ` (${details.join(', ')})` : ''} — ${quantity ? rupiah(Number(product.price)*quantity) : 'jumlah belum dipilih'}`);
   }
   return {
     text: [...lines,lines.length&&!hasUnknownQuantity ? `Total: ${rupiah(total)}` : null,draft?.customer_name ? `Nama: ${draft.customer_name}${draft.class_name ? ` · ${draft.class_name}` : ''}` : null,draft?.payment_method ? `Bayar: ${draft.payment_method}` : null].filter(Boolean).join('\n'),

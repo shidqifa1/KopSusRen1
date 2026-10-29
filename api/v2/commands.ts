@@ -10,9 +10,10 @@ import { handleChatInbound as handleChatInboundV2, recoverAbandonedInboundMessag
 
 const allowedActions = new Set([
   "record_quick_sale", "record_purchase", "create_order", "cancel_order",
+  "edit_sale_details",
   "confirm_cash_payment", "complete_order", "void_order", "create_po", "open_po_now", "set_po_status",
-  "adjust_inventory", "adjust_account", "update_ingredient", "update_product_recipe", "run_po_maintenance", "gateway_heartbeat",
-  "import_sales", "import_cash", "import_settings",
+  "adjust_inventory", "adjust_account", "settle_qris", "update_ingredient", "update_product_recipe", "run_po_maintenance", "gateway_heartbeat",
+  "record_historical_sales", "import_sales", "import_cash", "import_settings",
   "chat_inbound", "approval_list", "approval_approve", "approval_reject",
 ]);
 
@@ -576,6 +577,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         rows = await sql`select record_quick_sale(${payload.customerName}, ${payload.className || null}, ${productId}, ${payload.quantity}, ${payload.paymentMethod}, ${payload.notes || null}, ${payload.idempotencyKey}) as id`;
         break;
       }
+      case "edit_sale_details": {
+        const orderId = String(payload.orderId || '').trim();
+        if (!uuidPattern.test(orderId)) throw new Error('Transaksi tidak valid');
+        const customerName = String(payload.customerName || '').trim().slice(0,120);
+        const className = String(payload.className || '').trim().slice(0,40) || null;
+        const notes = String(payload.notes || '').trim().slice(0,300) || null;
+        if (!customerName) throw new Error('Nama customer wajib diisi');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || '')) || !/^\d{2}:\d{2}$/.test(String(payload.time || ''))) throw new Error('Tanggal atau jam tidak valid');
+        const occurredAt = importDate(`${payload.date}T${payload.time}:00+07:00`);
+        rows = await sql.begin(async db => {
+          const currentRows = await db`select o.id,o.status,o.customer_id,o.notes,o.created_at,
+              c.name as customer_name,c.class_name,c.phone,c.notes as customer_notes
+            from orders o left join customers c on c.id=o.customer_id
+            where o.id=${orderId}::uuid for update of o`;
+          const current = currentRows[0];
+          if (!current) throw new Error('Transaksi tidak ditemukan');
+          if (current.status !== 'FULFILLED') throw new Error('Hanya penjualan yang sudah selesai yang bisa diedit');
+
+          const nameChanged = String(current.customer_name || '') !== customerName;
+          const classChanged = String(current.class_name || '') !== String(className || '');
+          const notesChanged = String(current.notes || '') !== String(notes || '');
+          const dateChanged = new Date(current.created_at).getTime() !== new Date(occurredAt).getTime();
+          const changedFields = [nameChanged && 'customer',classChanged && 'kelas',notesChanged && 'catatan',dateChanged && 'tanggal'].filter(Boolean);
+          if (!changedFields.length) return [{id:orderId}];
+
+          let customerId = current.customer_id;
+          if (nameChanged || classChanged || !customerId) {
+            if (customerId) {
+              const related = await db`select count(*)::int as count from orders where customer_id=${customerId}::uuid`;
+              if (Number(related[0]?.count) > 1) {
+                const inserted = await db`insert into customers(name,class_name,phone,notes)
+                  values(${customerName},${className},${current.phone},${current.customer_notes}) returning id`;
+                customerId = inserted[0].id;
+              } else {
+                await db`update customers set name=${customerName},class_name=${className},updated_at=now() where id=${customerId}::uuid`;
+              }
+            } else {
+              const inserted = await db`insert into customers(name,class_name) values(${customerName},${className}) returning id`;
+              customerId = inserted[0].id;
+            }
+          }
+
+          await db`update orders set customer_id=${customerId}::uuid,notes=${notes},created_at=${occurredAt}::timestamptz,
+              fulfilled_at=${occurredAt}::timestamptz,updated_at=now() where id=${orderId}::uuid`;
+          await db`insert into audit_logs(event_type,entity_type,entity_id,payload)
+            values('SALE_DETAILS_EDITED','order',${orderId}::uuid,${db.json({fields:changedFields})})`;
+          return [{id:orderId}];
+        });
+        break;
+      }
       case "record_purchase": {
         const ingredientId = await resolveIngredientId(payload.ingredientId);
         rows = await sql`select record_purchase(${payload.supplier || null}, ${payload.accountId}, ${ingredientId}, ${payload.quantity}, ${payload.totalCost}, ${payload.source || "MANUAL"}, ${payload.notes || null}, ${payload.idempotencyKey}) as id`;
@@ -681,12 +732,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         rows = await sql`select adjust_inventory(${ingredientId}, ${payload.quantityDelta}, ${payload.reason}) as id`;
         break;
       }
+      case "settle_qris": {
+        const gross = Number(payload.grossAmount), net = Number(payload.netAmount);
+        if (!uuidPattern.test(String(payload.idempotencyKey || '')) || [payload.grossAmount,payload.netAmount].some(value => !['number','string'].includes(typeof value) || String(value).trim() === '')
+          || ![gross,net].every(v => Number.isFinite(v) && v > 0 && v <= 9999999999.99 && Math.abs(v*100-Math.round(v*100)) < 0.000001) || net > gross) throw new Error('Nominal pencairan QRIS tidak valid');
+        const fee = Math.round((gross-net)*100)/100;
+        rows = await sql.begin(async db => {
+          // Serialize settlements on the same accounts; the legacy CASH ledger
+          // is the owner's primary blu account throughout existing sales RPCs.
+          const accounts = await db`select id,type from accounts where type in ('CASH','QRIS') and is_active order by created_at,id for update`;
+          const blu = accounts.find(a => a.type === 'CASH'), qris = accounts.find(a => a.type === 'QRIS');
+          if (!blu || !qris) throw new Error('Akun blu atau QRIS tidak tersedia');
+          const previous = await db`select account_id,amount::float8 amount,entry_type from ledger_entries where reference_type='qris_settlement' and reference_id=${payload.idempotencyKey}`;
+          if (previous.length) {
+            const same = previous.some(e => e.account_id === qris.id && e.entry_type === 'TRANSFER_OUT' && Number(e.amount) === -gross)
+              && previous.some(e => e.account_id === blu.id && e.entry_type === 'TRANSFER_IN' && Number(e.amount) === gross)
+              && (fee === 0 ? !previous.some(e => e.entry_type === 'EXPENSE') : previous.some(e => e.account_id === blu.id && e.entry_type === 'EXPENSE' && Number(e.amount) === -fee));
+            if (!same) throw new Error('Kunci pencairan sudah dipakai untuk nominal berbeda');
+            return [{id:payload.idempotencyKey}];
+          }
+          const balance = await db`select balance::float8 balance from account_balances where account_id=${qris.id}`;
+          if (Number(balance[0]?.balance || 0) < gross) throw new Error('Saldo QRIS belum cair tidak mencukupi');
+          await db`insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description)
+            values(${qris.id},${-gross},'TRANSFER_OUT','qris_settlement',${payload.idempotencyKey},'Pencairan QRIS ke blu')`;
+          await db`insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description)
+            values(${blu.id},${gross},'TRANSFER_IN','qris_settlement',${payload.idempotencyKey},'Pencairan QRIS diterima blu')`;
+          if (fee > 0) await db`insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description)
+            values(${blu.id},${-fee},'EXPENSE','qris_settlement',${payload.idempotencyKey},'Biaya pencairan QRIS')`;
+          await db`insert into audit_logs(event_type,entity_type,entity_id,payload) values('QRIS_SETTLED','account',${blu.id},${sql.json({gross,net,fee,referenceId:payload.idempotencyKey})})`;
+          return [{id:payload.idempotencyKey}];
+        });
+        break;
+      }
       case "adjust_account":
         rows = await sql`select adjust_account(${payload.accountId}, ${payload.amount}, ${payload.reason}) as id`;
         break;
       case "update_ingredient": {
         const ingredientId = await resolveIngredientId(payload.ingredientId);
-        rows = await sql`select update_ingredient(${ingredientId}, ${payload.physicalStock}, ${payload.threshold}, ${payload.reason}) as id`;
+        if (payload.costOnly === true || payload.updateCost === true) {
+          const updateStock = payload.costOnly !== true && payload.updateCost === true;
+          if (updateStock && [payload.physicalStock, payload.threshold].some(value =>
+            !['number','string'].includes(typeof value) || String(value).trim() === '' || !Number.isFinite(Number(value)) || Number(value) < 0
+          )) throw new Error('Isi stok dan batas restock dengan angka minimal 0');
+          const automatic = payload.usePurchaseCost === true;
+          const packagePrice = automatic ? null : Number(payload.packagePrice);
+          const packageQuantity = automatic ? null : Number(payload.packageQuantity);
+          if (!automatic && (
+            [payload.packagePrice, payload.packageQuantity].some(value => !['number','string'].includes(typeof value) || String(value).trim() === '')
+            || !Number.isFinite(packagePrice) || packagePrice < 0
+            || !Number.isFinite(packageQuantity) || packageQuantity <= 0
+          )) throw new Error('Isi harga kemasan minimal 0 dan isi kemasan lebih dari 0');
+          rows = await sql.begin(async db => {
+            const before = await db`select cost_pack_price, cost_pack_quantity from ingredients where id=${ingredientId} and is_active for update`;
+            if (!before.length) throw new Error('Bahan tidak ditemukan atau tidak aktif');
+            const updated = await db`update ingredients set cost_pack_price=${packagePrice}, cost_pack_quantity=${packageQuantity}, updated_at=now() where id=${ingredientId} returning id`;
+            await db`insert into audit_logs(event_type,entity_type,entity_id,payload)
+              values('INGREDIENT_COST_UPDATED','ingredient',${ingredientId},${sql.json({
+                before: before[0], packagePrice, packageQuantity, source: automatic ? 'PURCHASE_AVERAGE' : 'MANUAL',
+              })})`;
+            if (updateStock) await db`select update_ingredient(${ingredientId}, ${Number(payload.physicalStock)}, ${Number(payload.threshold)}, ${payload.reason}) as id`;
+            return updated;
+          });
+        } else {
+          rows = await sql`select update_ingredient(${ingredientId}, ${payload.physicalStock}, ${payload.threshold}, ${payload.reason}) as id`;
+        }
         break;
       }
       case "update_product_recipe": {
@@ -696,6 +805,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : [];
         rows = await sql`select update_product_recipe(${productId}, ${payload.price}, ${sql.json(items)}) as id`;
         break;
+      }
+      case "record_historical_sales": {
+        const imported=importRows(payload);
+        const prepared=await Promise.all(imported.rows.map(async (row: any,index: number)=>({
+          customerName:String(row.customerName||'Anonim').trim().slice(0,120)||'Anonim',
+          className:String(row.className||'').trim().slice(0,40)||null,
+          productId:await resolveProductId(row.productId||row.productCode||row.productName),
+          unitPrice:Number(row.unitPrice),
+          paymentMethod:/qris/i.test(String(row.paymentMethod||''))?'QRIS':'CASH',
+          notes:String(row.notes||'').trim().slice(0,300)||null,
+          occurredAt:importDate(row.date),
+          key:`manual-sale:${imported.batchKey}:${index}`,
+        })));
+        if (prepared.some(row=>!Number.isFinite(row.unitPrice)||row.unitPrice<0)) throw new Error('Harga penjualan tidak valid');
+        const result=await sql.begin(async db => {
+          const accounts=await db`select id,type from accounts where type in ('CASH','QRIS') and is_active order by created_at`;
+          const accountByType=new Map(accounts.map((account: any)=>[account.type,account.id]));
+          if (prepared.some(row=>!accountByType.has(row.paymentMethod))) throw new Error('Akun Cash atau QRIS aktif tidak ditemukan');
+          const importedOrders=await db`
+            select import_historical_sale(
+              item->>'customerName', item->>'className', (item->>'productId')::uuid,
+              (item->>'unitPrice')::numeric, item->>'paymentMethod', item->>'notes',
+              (item->>'occurredAt')::timestamptz, item->>'key'
+            ) id
+            from jsonb_array_elements(${db.json(prepared)}::jsonb) with ordinality as batch(item, position)
+            order by position`;
+          const ledgerRows=prepared.map((row,index)=>({
+            accountId:accountByType.get(row.paymentMethod),accountType:row.paymentMethod,
+            amount:row.unitPrice,orderId:importedOrders[index].id,
+            occurredAt:row.occurredAt,
+          }));
+          await db`
+            insert into ledger_entries(account_id,amount,entry_type,reference_type,reference_id,description,created_at)
+            select (item->>'accountId')::uuid,(item->>'amount')::numeric,'SALE','order',
+              (item->>'orderId')::uuid,'Penjualan historis',(item->>'occurredAt')::timestamptz
+            from jsonb_array_elements(${db.json(ledgerRows)}::jsonb) as batch(item)
+            on conflict do nothing`;
+          return importedOrders.map(row=>row.id);
+        });
+        return res.status(200).json({ok:true,imported:result.length,ids:result});
       }
       case "import_sales": {
         const imported=importRows(payload);
@@ -711,12 +860,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })));
         if (prepared.some(row=>!Number.isFinite(row.unitPrice)||row.unitPrice<0)) throw new Error('Harga penjualan tidak valid');
         const result=await sql.begin(async db => {
-          const ids=[];
-          for (const row of prepared) {
-            const value=await db`select import_historical_sale(${row.customerName},${row.className},${row.productId},${row.unitPrice},${row.paymentMethod},${row.notes},${row.occurredAt},${row.key}) id`;
-            ids.push(value[0].id);
-          }
-          return ids;
+          const values=await db`
+            select import_historical_sale(
+              item->>'customerName', item->>'className', (item->>'productId')::uuid,
+              (item->>'unitPrice')::numeric, item->>'paymentMethod', item->>'notes',
+              (item->>'occurredAt')::timestamptz, item->>'key'
+            ) id
+            from jsonb_array_elements(${sql.json(prepared)}::jsonb) with ordinality as batch(item, position)
+            order by position`;
+          return values.map(row => row.id);
         });
         return res.status(200).json({ok:true,imported:result.length,ids:result});
       }
@@ -732,12 +884,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }));
         if (prepared.some(row=>!Number.isFinite(row.amount)||row.amount===0)) throw new Error('Jumlah mutasi kas tidak valid');
         const result=await sql.begin(async db => {
-          const ids=[];
-          for (const row of prepared) {
-            const value=await db`select import_cash_entry(${cashRows[0].id},${row.amount},${row.description},${row.occurredAt},${row.referenceId}) id`;
-            ids.push(value[0].id);
-          }
-          return ids;
+          const values=await db`
+            select import_cash_entry(
+              ${cashRows[0].id}::uuid, (item->>'amount')::numeric, item->>'description',
+              (item->>'occurredAt')::timestamptz, (item->>'referenceId')::uuid
+            ) id
+            from jsonb_array_elements(${sql.json(prepared)}::jsonb) with ordinality as batch(item, position)
+            order by position`;
+          return values.map(row => row.id);
         });
         return res.status(200).json({ok:true,imported:result.length,ids:result});
       }

@@ -34,6 +34,9 @@ export function parseOwnerCommand(input) {
     return {ok:true,kind:'READ',action:verb==='list'?'ORDER_LIST':'ORDER_UNPAID',args:{selector:selector(tokens[2])},command:`/order ${verb} ${selector(tokens[2])}`};
   }
   if (head==='/produksi'&&tokens.length===2&&selector(tokens[1])) return {ok:true,kind:'READ',action:'PRODUCTION',args:{selector:selector(tokens[1])},command:`/produksi ${selector(tokens[1])}`};
+  if (head==='/simulasi'&&tokens.length===2&&/^\d{1,4}$/.test(tokens[1])&&Number(tokens[1])>0&&Number(tokens[1])<=1000) {
+    return {ok:true,kind:'READ',action:'SIMULATION',args:{quantity:Number(tokens[1])},command:`/simulasi ${Number(tokens[1])}`};
+  }
   if (head==='/stok'&&['tambah','kurang'].includes(verb)&&tokens.length===5) {
     const quantity=positiveNumber(tokens[3]);
     const unit=tokens[4].toUpperCase()==='GR'?'G':tokens[4].toUpperCase();
@@ -53,6 +56,11 @@ export function parseOwnerCommand(input) {
   }
   if (head==='/order'&&verb==='batal'&&tokens.length===3&&Number.isInteger(Number(tokens[2]))&&Number(tokens[2])>0) {
     return {ok:true,kind:'WRITE',action:'ORDER_CANCEL',args:{orderNumber:Number(tokens[2])},command:`/order batal ${Number(tokens[2])}`};
+  }
+  if (head==='/chat'&&['ambil','lanjut'].includes(verb)&&tokens.length===3) {
+    const phone=tokens[2].replace(/^\+/,'').replace(/^0/,'62');
+    if (!/^62[1-9]\d{7,12}$/.test(phone)) return {ok:false,error:'Pakai nomor WhatsApp lengkap, misalnya /chat ambil 628123456789.'};
+    return {ok:true,kind:'WRITE',action:'CHAT_HANDOFF',args:{phone,paused:verb==='ambil'},command:`/chat ${verb} ${phone}`};
   }
   return {ok:false,error:'Command tidak dikenal atau argumennya belum lengkap. Pakai /help.'};
 }
@@ -98,9 +106,106 @@ export function ownerCommandHelp() {
   return ['Command owner:',...OWNER_READ_COMMANDS,...OWNER_WRITE_COMMANDS].join('\n');
 }
 
+export async function loadOwnerConsultationContext(db,text='') {
+  // One statement gives the consultant a consistent, bounded read snapshot.
+  // These are fixed queries; the model never supplies SQL or identifiers.
+  const rows=await db`
+    with stock as (
+      select ingredient_id,code,left(name,80) name,unit,physical_stock::float8 physical_stock,
+        reserved_stock::float8 reserved_stock,available_stock::float8 available_stock,
+        average_cost::float8 average_cost,low_stock_threshold::float8 low_stock_threshold
+      from inventory_stock order by name limit 101
+    ), active_products as (
+      select id,code,left(name,80) name,price::float8 price from products where is_active order by name limit 101
+    ), recipe_data as (
+      select r.product_id,ri.ingredient_id,ri.quantity::float8 quantity
+      from recipe_items ri join recipes r on r.id=ri.recipe_id
+      join active_products p on p.id=r.product_id order by r.product_id,ri.ingredient_id limit 1001
+    ), recent_po as (
+      select id,left(name,80) name,delivery_date,status,open_at,cutoff_at,max_total_cups,
+        get_po_summary(id) summary,
+        case when status='OPEN' then evaluate_po_availability(id,'[]'::jsonb) end availability
+      from po_sessions where status in ('OPEN','DRAFT') order by delivery_date desc,created_at desc limit 11
+    ), weekly_orders as (
+      select id,total_amount from orders where created_at>=statement_timestamp()-interval '7 days'
+        and status not in ('CANCELLED','REJECTED')
+    ), weekly_totals as (
+      select 7 period_days,statement_timestamp()-interval '7 days' period_started_at,
+        count(*)::int orders,coalesce(sum(o.total_amount),0)::float8 order_amount,
+        coalesce(sum(o.total_amount) filter(where exists(select 1 from payments p where p.order_id=o.id and p.status='PAID')),0)::float8 paid_amount
+      from weekly_orders o
+    ), ranking as (
+      select p.code,left(p.name,80) name,sum(oi.qty)::int cups,sum(oi.line_total)::float8 amount
+      from weekly_orders o join order_items oi on oi.order_id=o.id join products p on p.id=oi.product_id
+      group by p.id order by sum(oi.qty) desc,p.id limit 21
+    ), balances as (
+      select left(name,80) name,type,balance::float8 balance from account_balances order by name limit 51
+    )
+    select statement_timestamp() observed_at,
+      coalesce((select json_agg(s) from stock s),'[]') stock,
+      coalesce((select json_agg(p) from active_products p),'[]') products,
+      coalesce((select json_agg(r) from recipe_data r),'[]') recipes,
+      coalesce((select json_agg(p) from recent_po p),'[]') po_sessions,
+      (select row_to_json(w) from weekly_totals w) weekly_sales,
+      coalesce((select json_agg(r) from ranking r),'[]') weekly_menu_ranking,
+      coalesce((select json_agg(b) from balances b),'[]') accounts`;
+  if (!rows[0]?.observed_at) throw new Error('Snapshot data usaha tidak tersedia');
+  const context={...rows[0],truncated:{}};
+  for (const [key,limit] of Object.entries({stock:100,products:100,recipes:1000,po_sessions:10,weekly_menu_ranking:20,accounts:50})) {
+    context.truncated[key]=(context[key]||[]).length>limit;
+    context[key]=(context[key]||[]).slice(0,limit);
+  }
+  const target=String(text).match(/\b(\d+)\s*(?:cup|gelas)\b/i);
+  const requested=target?Number(target[1]):null;
+  const targetCups=Number.isInteger(requested)&&requested>0&&requested<=1000?requested:null;
+  context.simulation={target_cups:targetCups,basis:'Tambahan order, resep standar; tiap menu adalah skenario terpisah, bukan gabungan. Kapasitas stok belum termasuk limit PO.'};
+  const round=value=>Math.round(value*1000)/1000;
+  context.production_scenarios=context.products.map(product=>{
+    const recipe=context.recipes.filter(item=>item.product_id===product.id);
+    const ingredients=recipe.map(item=>{
+      const stock=context.stock.find(value=>value.ingredient_id===item.ingredient_id);
+      const available=stock?Math.max(0,Number(stock.available_stock)):null;
+      const required=targetCups?round(Number(item.quantity)*targetCups):null;
+      return {name:stock?.name||null,unit:stock?.unit||null,per_cup:Number(item.quantity),
+        available_for_additional:available,target_quantity:required,
+        shortage:available!==null&&required!==null?round(Math.max(0,required-available)):null,
+        cost_per_unit:stock&&Number(stock.average_cost)>0?Number(stock.average_cost):null};
+    });
+    const complete=recipe.length>0&&!context.truncated.recipes&&ingredients.every(item=>item.available_for_additional!==null&&item.per_cup>0);
+    return {code:product.code,name:product.name,price:product.price,ingredients,
+      max_additional_cups_by_stock:complete?Math.min(...ingredients.map(item=>Math.floor(item.available_for_additional/item.per_cup+1e-9))):null,
+      ingredient_cost_per_cup:complete&&ingredients.every(item=>item.cost_per_unit!==null)
+        ?Math.round(ingredients.reduce((sum,item)=>sum+item.per_cup*item.cost_per_unit,0)*100)/100:null};
+  });
+  return context;
+}
+
+export function formatOwnerProductionSimulation(context) {
+  const target=context.simulation?.target_cups;
+  if (!target) return 'Sebutkan target 1 sampai 1000 cup, misalnya /simulasi 15.';
+  const lines=[`Simulasi tambahan ${target} cup per menu. Pilih satu skenario; ini bukan campuran menu.`,
+    'Resep standar, memakai stok bebas setelah reservasi.'];
+  for (const scenario of context.production_scenarios) {
+    lines.push('',scenario.name);
+    if (scenario.max_additional_cups_by_stock===null) {lines.push('Resep atau data bahan belum lengkap; kebutuhan belum bisa dipastikan.');continue;}
+    lines.push('Kebutuhan:',...scenario.ingredients.map(item=>`• ${item.name}: ${item.target_quantity} ${item.unit}`));
+    const shortages=scenario.ingredients.filter(item=>item.shortage>0);
+    lines.push(shortages.length?`Kurang: ${shortages.map(item=>`${item.name} ${item.shortage} ${item.unit}`).join(', ')}.`:'Bahan cukup untuk target ini.');
+    const openPo=context.po_sessions.filter(po=>po.status==='OPEN');
+    if (!openPo.length) lines.push('Belum ada PO aktif; ini hanya simulasi stok.');
+    else for (const po of openPo) {
+      const live=po.availability?.products?.find(item=>item.code===scenario.code);
+      if (!live) lines.push('Kapasitas menu di PO aktif belum bisa dipastikan.');
+      else lines.push(`Batas tersedia di PO aktif: ${live.availableQty} cup${!live.available||Number(live.availableQty)<target?' — target belum bisa diterima seluruhnya':''}.`);
+    }
+  }
+  return lines.join('\n');
+}
+
 export async function executeOwnerReadCommand(db,parsed) {
   if (!parsed?.ok||parsed.kind!=='READ') throw new Error('Read command tidak valid.');
   if (parsed.action==='HELP') return {command:parsed.command,type:'HELP',data:{text:ownerCommandHelp()}};
+  if (parsed.action==='SIMULATION') return {command:parsed.command,type:'SIMULATION',data:await loadOwnerConsultationContext(db,`${parsed.args.quantity} cup`)};
   if (parsed.action==='MENU_LIST') {
     const rows=await db`select code,name,price::float8 price from products where is_active order by name limit 100`;
     return {command:parsed.command,type:'MENU',data:rows};
@@ -135,6 +240,20 @@ export async function executeOwnerReadCommand(db,parsed) {
 
 export async function executeOwnerWriteCommand(db,parsed) {
   if (!parsed?.ok||parsed.kind!=='WRITE') throw new Error('Write command tidak valid.');
+  if (parsed.action==='CHAT_HANDOFF') {
+    const {phone,paused}=parsed.args;
+    const owners=String(process.env.WA_OWNER_NUMBERS||'').split(',').map(value=>value.replace(/\D/g,'').replace(/^0/,'62'));
+    if (owners.includes(phone)) throw new Error('Command ini hanya untuk percakapan customer, bukan nomor owner.');
+    await db`select pg_advisory_xact_lock(hashtextextended(${phone},0))`;
+    const rows=await db`update conversation_order_states set
+      order_state=(order_state-'_confirmation_snapshot'-'_usual_order_suggestion')||jsonb_build_object(
+        '_manual_handoff',${paused}::boolean,'awaiting_confirmation',false),
+      status='collecting_information',updated_at=now()
+      where channel='whatsapp' and customer_phone=${phone} returning customer_phone`;
+    if (!rows.length) throw new Error('Percakapan customer belum ditemukan.');
+    return {replyText:paused?`Chat ${phone} diambil alih manual. Bot berhenti membalas sampai /chat lanjut ${phone}.`
+      :`Bot untuk ${phone} aktif lagi. Draft tetap tersimpan; detail order perlu dikonfirmasi ulang.`};
+  }
   if (parsed.action==='STOCK_ADJUST') {
     const ingredient=await resolveIngredient(db,parsed.args.item);
     const quantity=convertQuantity(parsed.args.quantity,parsed.args.unit,String(ingredient.unit).toUpperCase());
@@ -180,8 +299,25 @@ export async function executeOwnerWriteCommand(db,parsed) {
 
 export function formatOwnerReadResult(result) {
   if (result.type==='HELP') return result.data.text;
+  if (result.type==='SIMULATION') return formatOwnerProductionSimulation(result.data);
   if (result.type==='MENU') return result.data.length?['Menu aktif:',...result.data.map(row=>`• ${row.name} — Rp${Number(row.price).toLocaleString('id-ID')}`)].join('\n'):'Belum ada menu aktif.';
   if (result.type==='STOCK') return result.data.length?['Stok tersedia:',...result.data.map(row=>`• ${row.name}: ${Number(row.available_stock)} ${row.unit}${Number(row.available_stock)<=Number(row.threshold)?' ⚠️':''}`)].join('\n'):'Stok tidak ditemukan.';
   if (result.type==='PO_LIST') return result.data.length?['Daftar PO:',...result.data.map(row=>`• ${row.name} · ${row.delivery_date} · ${row.status}`)].join('\n'):'Belum ada PO.';
+  if (['PO_STATUS','PRODUCTION'].includes(result.type)) {
+    const {po,summary}=result.data;
+    if (!summary) return `Ringkasan ${po.name} belum tersedia.`;
+    const lines=[`${po.name} · ${po.status}`,
+      `${summary.totalOrders||0} order / ${summary.totalCups||0} cup`,
+      `Lunas: ${summary.paid||0} · Belum lunas: ${summary.unpaid||0}`,
+      `Nilai order: Rp${Number(summary.revenue||0).toLocaleString('id-ID')}`];
+    if (result.type==='PRODUCTION') {
+      const menu=summary.productionMenuTotals||[];
+      const ingredients=summary.productionIngredientTotals||[];
+      if (!menu.length) lines.push('Tidak ada antrean produksi yang belum selesai.');
+      else lines.push('Masih perlu diproduksi:',...menu.map(item=>`• ${item.quantity}x ${item.name}`),
+        'Bahan untuk antrean ini:',...ingredients.map(item=>`• ${item.name}: ${Number(item.quantity)} ${item.unit}`));
+    }
+    return lines.join('\n');
+  }
   return JSON.stringify(result.data,null,2).slice(0,4000);
 }
