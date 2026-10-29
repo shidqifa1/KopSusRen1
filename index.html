@@ -129,7 +129,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
         <div class="field"><label for="orderClass">Kelas</label><input id="orderClass" placeholder="Contoh: 8.1"></div>
         <div class="field field-wide"><label for="orderProduct">Menu</label><select id="orderProduct"></select></div>
         <div class="field"><label for="orderQty">Jumlah cup</label><input id="orderQty" type="number" min="1" value="1"></div>
-        <div class="field"><label for="orderPayment">Pembayaran diterima</label><select id="orderPayment"><option value="CASH">Transfer blu sudah diterima</option><option value="QRIS">QRIS sudah diterima</option></select></div>
+        <div class="field"><label for="orderPayment">Pembayaran diterima</label><select id="orderPayment"><option value="CASH">Cash sudah diterima</option><option value="QRIS">QRIS sudah diterima</option></select></div>
         <div class="field field-wide"><label for="orderNotes">Catatan</label><input id="orderNotes" placeholder="Opsional, misalnya: less sugar / no ice"></div>
       </div>
       <button id="poOrderSubmit" class="btn btn-primary btn-full po-submit" onclick="simpanPenjualanLangsung()">Simpan penjualan</button>
@@ -221,7 +221,7 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
       <div class="field field-wide"><label for="historicalSaleProduct">Menu</label><select id="historicalSaleProduct" onchange="historicalSaleProductChanged()" required></select></div>
       <div class="field"><label for="historicalSaleQuantity">Jumlah cup</label><input type="number" id="historicalSaleQuantity" min="1" max="100" step="1" value="1" required></div>
       <div class="field"><label for="historicalSalePrice">Harga per cup (Rp)</label><input type="number" id="historicalSalePrice" min="0" step="1" required></div>
-      <div class="field"><label for="historicalSalePayment">Pembayaran</label><select id="historicalSalePayment"><option value="CASH">blu</option><option value="QRIS">QRIS</option></select></div>
+      <div class="field"><label for="historicalSalePayment">Pembayaran</label><select id="historicalSalePayment"><option value="CASH">Cash</option><option value="QRIS">QRIS</option></select></div>
       <div class="field field-wide"><label for="historicalSaleNotes">Catatan (opsional)</label><input id="historicalSaleNotes" maxlength="300"></div>
       <div class="field-wide"><button class="btn btn-primary btn-full" id="historicalSaleSubmit" type="submit">Simpan penjualan lama</button></div>
     </form>
@@ -1029,7 +1029,7 @@ function legacyStateFromV2(data) {
           modal: modalPerCup,
           hppEstimated,
           noIce: Boolean(item.no_ice),
-          bayar: o.payment_method === 'CASH' ? 'Transfer blu' : 'QRIS',
+          bayar: o.payment_method === 'CASH' ? 'Cash' : 'QRIS',
           keterangan: o.notes || '',
         });
       }
@@ -1521,9 +1521,9 @@ function renderPo() {
         <div><div class="po-order-number">ORDER #${order.order_number}</div><strong class="po-order-name">${safeText(order.customer_name)}${order.class_name ? ` · ${safeText(order.class_name)}` : ''}</strong></div>
         <span class="badge ${badgeClass}">${poStatusLabel(order.status)}</span>
       </div>
-      <div class="po-order-meta">${itemText}<br>${order.payment_method === 'CASH' ? 'Transfer blu' : 'QRIS'} · ${paymentStatusLabel(order.payment_status)}</div>
+      <div class="po-order-meta">${itemText}<br>${order.payment_method === 'CASH' ? 'Cash' : 'QRIS'} · ${paymentStatusLabel(order.payment_status)}</div>
       ${!inactive ? `<div class="po-order-actions">
-        ${!paid ? `<button class="btn btn-primary btn-sm" onclick="konfirmasiPembayaran('${order.id}')">Konfirmasi ${order.payment_method === 'CASH' ? 'transfer blu' : 'QRIS'}</button>` : ''}
+        ${!paid ? `<button class="btn btn-primary btn-sm" onclick="konfirmasiPembayaran('${order.id}')">Konfirmasi ${order.payment_method === 'CASH' ? 'cash' : 'QRIS'}</button>` : ''}
         <button class="btn btn-outline btn-sm" onclick="selesaikanOrder('${order.id}')" ${paid ? '' : 'disabled title="Konfirmasi pembayaran dulu"'}>Pesanan selesai</button>
         <button class="btn btn-danger btn-sm" onclick="batalkanOrder('${order.id}')">Batalkan</button>
       </div>` : ''}
@@ -3060,7 +3060,7 @@ async function exportPenjualanCSV() {
         menuNama: entry.product_name,
         hargaSatuan: Number(entry.unit_price),
         keterangan: entry.notes,
-        bayar: entry.payment_method === 'CASH' ? 'Transfer blu' : 'QRIS',
+        bayar: entry.payment_method === 'CASH' ? 'Cash' : 'QRIS',
       }));
     } catch (error) {
       showToast(error.message || 'Export penjualan gagal', 'error');

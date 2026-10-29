@@ -48,6 +48,15 @@ test('sales history exposes date correction and a no-stock historical sale form'
   assert.match(serviceSource,/updateSaleDetails: payload => command\('edit_sale_details'/);
   assert.match(commands,/"edit_sale_details"/);
 });
+test('sale payment choices are only Cash and QRIS in direct and historical sales',()=>{
+  for(const id of ['orderPayment','historicalSalePayment']){
+    const match=html.match(new RegExp(`<select id="${id}"[^>]*>([\\s\\S]*?)<\\/select>`));
+    assert.ok(match,`${id} exists`);
+    assert.deepEqual([...match[1].matchAll(/<option value="([^"]+)"/g)].map(option=>option[1]),['CASH','QRIS']);
+    assert.match(match[1],/>Cash(?: sudah diterima)?</);
+  }
+  assert.doesNotMatch(html,/Transfer blu/);
+});
 test('adding a backdated sale sends each cup as a retry-safe historical import',async()=>{
   const {context,node}=appHarness();const submitted=[];
   node('historicalSaleDate').value='2026-10-20';node('historicalSaleTime').value='13:45';
