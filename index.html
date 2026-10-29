@@ -210,6 +210,22 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <label for="filterCustomer">Cari Customer</label>
     <input type="text" id="filterCustomer" placeholder="Nama customer..." oninput="renderRiwayat()">
   </div>
+  <details class="card" id="historicalSaleDetails">
+    <summary>Tambah penjualan yang tertinggal</summary>
+    <form id="historicalSaleForm" class="form-grid" onsubmit="submitHistoricalSale(event)">
+      <p class="form-help field-wide">Catatan historis tidak mengurangi stok dan tidak mengubah saldo blu/QRIS. Kalau perlu koreksi kas, catat terpisah di Belanja & Pengeluaran. HPP akan memakai perkiraan hari ini.</p>
+      <div class="field"><label for="historicalSaleDate">Tanggal penjualan</label><input type="date" id="historicalSaleDate" required></div>
+      <div class="field"><label for="historicalSaleTime">Jam</label><input type="time" id="historicalSaleTime" value="12:00" required></div>
+      <div class="field"><label for="historicalSaleCustomer">Nama customer</label><input id="historicalSaleCustomer" maxlength="120" value="Anonim" required></div>
+      <div class="field"><label for="historicalSaleClass">Kelas (opsional)</label><input id="historicalSaleClass" maxlength="40"></div>
+      <div class="field field-wide"><label for="historicalSaleProduct">Menu</label><select id="historicalSaleProduct" onchange="historicalSaleProductChanged()" required></select></div>
+      <div class="field"><label for="historicalSaleQuantity">Jumlah cup</label><input type="number" id="historicalSaleQuantity" min="1" max="100" step="1" value="1" required></div>
+      <div class="field"><label for="historicalSalePrice">Harga per cup (Rp)</label><input type="number" id="historicalSalePrice" min="0" step="1" required></div>
+      <div class="field"><label for="historicalSalePayment">Pembayaran</label><select id="historicalSalePayment"><option value="CASH">blu</option><option value="QRIS">QRIS</option></select></div>
+      <div class="field field-wide"><label for="historicalSaleNotes">Catatan (opsional)</label><input id="historicalSaleNotes" maxlength="300"></div>
+      <div class="field-wide"><button class="btn btn-primary btn-full" id="historicalSaleSubmit" type="submit">Simpan penjualan lama</button></div>
+    </form>
+  </details>
   <div id="riwayatList"></div>
   <div class="page-bottom"></div>
 </div>
@@ -504,7 +520,18 @@ if (!['localhost', '127.0.0.1'].includes(location.hostname)) {
     <button type="button" class="modal-close" onclick="closeModal('modalDetail')" aria-label="Tutup dialog"><span aria-hidden="true">✕</span></button>
     <div class="modal-title" id="modalDetailTitle">Detail Transaksi</div>
     <div id="modalDetailContent"></div>
-    <div class="btn-group">
+    <form id="editSaleForm" class="form-grid" onsubmit="saveSaleDetails(event)" hidden>
+      <input type="hidden" id="editSaleOrderId">
+      <p class="form-help field-wide">Perubahan berlaku untuk seluruh item di order ini. Menu, harga, stok, dan mutasi kas tidak berubah.</p>
+      <div class="field"><label for="editSaleDate">Tanggal</label><input type="date" id="editSaleDate" required></div>
+      <div class="field"><label for="editSaleTime">Jam</label><input type="time" id="editSaleTime" required></div>
+      <div class="field"><label for="editSaleCustomer">Nama customer</label><input id="editSaleCustomer" maxlength="120" required></div>
+      <div class="field"><label for="editSaleClass">Kelas</label><input id="editSaleClass" maxlength="40"></div>
+      <div class="field field-wide"><label for="editSaleNotes">Catatan</label><input id="editSaleNotes" maxlength="300"></div>
+      <div class="field-wide btn-group"><button class="btn btn-outline" type="button" onclick="cancelEditSaleDetails()">Batal</button><button class="btn btn-primary" type="submit">Simpan perubahan</button></div>
+    </form>
+    <div class="btn-group" id="saleDetailActions">
+      <button id="editSaleDetailsButton" class="btn btn-outline btn-sm" type="button" onclick="editSaleDetails()" hidden>Edit info penjualan</button>
       <button id="deleteSaleBtn" class="btn btn-danger btn-sm" onclick="hapusPenjualan()">Batalkan & refund</button>
     </div>
   </div>
@@ -989,6 +1016,7 @@ function legacyStateFromV2(data) {
         penjualan.push({
           id: `${o.id}:${item.order_item_id || item.product_id}:${cupNumber}`,
           orderId: o.id,
+          createdAt: o.created_at,
           tanggal: dt.toLocaleDateString('en-CA'),
           waktu: dt.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }),
           customer: o.customer_name || 'Customer',
@@ -1879,6 +1907,21 @@ let riwayatDetailId = null;
 function renderRiwayat() {
   const filterTgl = document.getElementById('filterTanggal').value;
   const filterCust = document.getElementById('filterCustomer').value.toLowerCase();
+  const historicalDate = document.getElementById('historicalSaleDate');
+  if (historicalDate && !historicalDate.value) historicalDate.value = today();
+  const historicalProduct = document.getElementById('historicalSaleProduct');
+  if (historicalProduct) {
+    const selectedProduct = historicalProduct.value;
+    historicalProduct.innerHTML = state.menu.map(menu => `<option value="${menu.id}">${safeText(menu.nama)} · ${rp(menu.harga)}</option>`).join('');
+    if (state.menu.some(menu => menu.id === selectedProduct)) historicalProduct.value = selectedProduct;
+    else if (state.menu.length) historicalProduct.value = state.menu[0].id;
+    const selectedMenu = state.menu.find(menu => menu.id === historicalProduct.value);
+    const priceInput = document.getElementById('historicalSalePrice');
+    if (priceInput && !priceInput.dataset.initialized && selectedMenu) {
+      priceInput.value = String(selectedMenu.harga);
+      priceInput.dataset.initialized = 'true';
+    }
+  }
 
   let data = state.penjualan.slice().reverse();
   if(filterTgl) data = data.filter(p=>p.tanggal===filterTgl);
@@ -1918,6 +1961,54 @@ function renderRiwayat() {
     </div>`).join('');
 }
 
+function historicalSaleProductChanged() {
+  const menu = getMenu(document.getElementById('historicalSaleProduct').value);
+  if (menu) document.getElementById('historicalSalePrice').value = String(menu.harga);
+  const button = document.getElementById('historicalSaleSubmit');
+  if (button) { delete button.dataset.fingerprint; delete button.dataset.batchKey; }
+}
+
+async function submitHistoricalSale(event) {
+  event.preventDefault();
+  const quantity = Number(document.getElementById('historicalSaleQuantity').value);
+  const unitPrice = Number(document.getElementById('historicalSalePrice').value);
+  const productId = document.getElementById('historicalSaleProduct').value;
+  const date = document.getElementById('historicalSaleDate').value;
+  const time = document.getElementById('historicalSaleTime').value;
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) return showToast('Jumlah harus 1–100 cup', 'error');
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) return showToast('Harga per cup tidak valid', 'error');
+  if (!productId || !date || !time) return showToast('Tanggal, jam, dan menu wajib diisi', 'error');
+  const row = {
+    customerName: document.getElementById('historicalSaleCustomer').value.trim() || 'Anonim',
+    className: document.getElementById('historicalSaleClass').value.trim(),
+    productId,
+    unitPrice,
+    paymentMethod: document.getElementById('historicalSalePayment').value,
+    notes: document.getElementById('historicalSaleNotes').value.trim(),
+    date: `${date}T${time}:00+07:00`,
+  };
+  const rows = Array.from({length:quantity}, () => ({...row}));
+  const fingerprint = JSON.stringify(rows);
+  const button = document.getElementById('historicalSaleSubmit');
+  if (button.dataset.fingerprint !== fingerprint || !button.dataset.batchKey) {
+    button.dataset.fingerprint = fingerprint;
+    button.dataset.batchKey = crypto.randomUUID().replaceAll('-', '');
+  }
+  const ok = await runV2Mutation('Menyimpan penjualan historis...', () => window.kopsusrenServices.importSales({batchKey:button.dataset.batchKey,rows}), `${quantity} cup penjualan historis tersimpan`);
+  if (ok) {
+    document.getElementById('filterTanggal').value = date;
+    document.getElementById('historicalSaleForm').reset();
+    document.getElementById('historicalSaleDate').value = today();
+    document.getElementById('historicalSaleTime').value = '12:00';
+    document.getElementById('historicalSaleCustomer').value = 'Anonim';
+    document.getElementById('historicalSaleQuantity').value = '1';
+    document.getElementById('historicalSalePrice').dataset.initialized = '';
+    delete button.dataset.fingerprint;
+    delete button.dataset.batchKey;
+    renderRiwayat();
+  }
+}
+
 function showDetail(id) {
   riwayatDetailId = id;
   const p = state.penjualan.find(x=>x.id===id);
@@ -1939,7 +2030,54 @@ function showDetail(id) {
       ${p.keterangan?`<div style="display:flex;justify-content:space-between"><span>Keterangan</span><span>${safeText(p.keterangan)}</span></div>`:''}
     </div>`;
   document.getElementById('deleteSaleBtn').textContent = state.isV2 ? 'Batalkan & refund' : 'Hapus transaksi';
+  document.getElementById('editSaleDetailsButton').hidden = !state.isV2 || !p.orderId;
+  document.getElementById('modalDetailTitle').textContent = 'Detail Transaksi';
+  document.getElementById('modalDetailContent').hidden = false;
+  document.getElementById('editSaleForm').hidden = true;
+  document.getElementById('saleDetailActions').hidden = false;
   openModal('modalDetail');
+}
+
+function editSaleDetails() {
+  const sale = state.penjualan.find(item => item.id === riwayatDetailId);
+  if (!sale?.orderId) return;
+  const createdAt = new Date(sale.createdAt);
+  const pad = value => String(value).padStart(2, '0');
+  document.getElementById('editSaleOrderId').value = sale.orderId;
+  document.getElementById('editSaleDate').value = `${createdAt.getFullYear()}-${pad(createdAt.getMonth()+1)}-${pad(createdAt.getDate())}`;
+  document.getElementById('editSaleTime').value = `${pad(createdAt.getHours())}:${pad(createdAt.getMinutes())}`;
+  document.getElementById('editSaleCustomer').value = sale.customer || '';
+  document.getElementById('editSaleClass').value = sale.kelas || '';
+  document.getElementById('editSaleNotes').value = sale.keterangan || '';
+  document.getElementById('modalDetailTitle').textContent = 'Edit info penjualan';
+  document.getElementById('modalDetailContent').hidden = true;
+  document.getElementById('editSaleForm').hidden = false;
+  document.getElementById('saleDetailActions').hidden = true;
+}
+
+function cancelEditSaleDetails() {
+  document.getElementById('modalDetailTitle').textContent = 'Detail Transaksi';
+  document.getElementById('modalDetailContent').hidden = false;
+  document.getElementById('editSaleForm').hidden = true;
+  document.getElementById('saleDetailActions').hidden = false;
+}
+
+async function saveSaleDetails(event) {
+  event.preventDefault();
+  const payload = {
+    orderId: document.getElementById('editSaleOrderId').value,
+    date: document.getElementById('editSaleDate').value,
+    time: document.getElementById('editSaleTime').value,
+    customerName: document.getElementById('editSaleCustomer').value.trim(),
+    className: document.getElementById('editSaleClass').value.trim(),
+    notes: document.getElementById('editSaleNotes').value.trim(),
+  };
+  if (!payload.customerName || !payload.date || !payload.time) return showToast('Nama customer, tanggal, dan jam wajib diisi', 'error');
+  const ok = await runV2Mutation('Menyimpan perubahan riwayat...', () => window.kopsusrenServices.updateSaleDetails(payload), 'Info penjualan berhasil diperbarui');
+  if (ok) {
+    closeModal('modalDetail');
+    riwayatDetailId = null;
+  }
 }
 
 async function hapusPenjualan() {

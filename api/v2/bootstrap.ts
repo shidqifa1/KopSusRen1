@@ -38,6 +38,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           left join payments p on p.order_id = o.id
           left join order_items oi on oi.order_id = o.id
           left join products pr on pr.id = oi.product_id
+          where o.id in (
+            (select id from orders order by created_at desc limit 500)
+            union
+            (select id from orders where source = 'IMPORT')
+          )
           group by o.id, c.name, c.class_name, c.phone, p.status, p.expires_at, p.proof_received_at
           order by o.created_at desc limit 500`,
       lightPo ? Promise.resolve([]) : sql`select id, ingredient_id, quantity_delta::float8 as quantity_delta, movement_type,

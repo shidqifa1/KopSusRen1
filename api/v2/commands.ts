@@ -10,6 +10,7 @@ import { handleChatInbound as handleChatInboundV2, recoverAbandonedInboundMessag
 
 const allowedActions = new Set([
   "record_quick_sale", "record_purchase", "create_order", "cancel_order",
+  "edit_sale_details",
   "confirm_cash_payment", "complete_order", "void_order", "create_po", "open_po_now", "set_po_status",
   "adjust_inventory", "adjust_account", "settle_qris", "update_ingredient", "update_product_recipe", "run_po_maintenance", "gateway_heartbeat",
   "import_sales", "import_cash", "import_settings",
@@ -574,6 +575,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case "record_quick_sale": {
         const productId = await resolveProductId(payload.productId);
         rows = await sql`select record_quick_sale(${payload.customerName}, ${payload.className || null}, ${productId}, ${payload.quantity}, ${payload.paymentMethod}, ${payload.notes || null}, ${payload.idempotencyKey}) as id`;
+        break;
+      }
+      case "edit_sale_details": {
+        const orderId = String(payload.orderId || '').trim();
+        if (!uuidPattern.test(orderId)) throw new Error('Transaksi tidak valid');
+        const customerName = String(payload.customerName || '').trim().slice(0,120);
+        const className = String(payload.className || '').trim().slice(0,40) || null;
+        const notes = String(payload.notes || '').trim().slice(0,300) || null;
+        if (!customerName) throw new Error('Nama customer wajib diisi');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.date || '')) || !/^\d{2}:\d{2}$/.test(String(payload.time || ''))) throw new Error('Tanggal atau jam tidak valid');
+        const occurredAt = importDate(`${payload.date}T${payload.time}:00+07:00`);
+        rows = await sql.begin(async db => {
+          const currentRows = await db`select o.id,o.status,o.customer_id,o.notes,o.created_at,
+              c.name as customer_name,c.class_name,c.phone,c.notes as customer_notes
+            from orders o left join customers c on c.id=o.customer_id
+            where o.id=${orderId}::uuid for update of o`;
+          const current = currentRows[0];
+          if (!current) throw new Error('Transaksi tidak ditemukan');
+          if (current.status !== 'FULFILLED') throw new Error('Hanya penjualan yang sudah selesai yang bisa diedit');
+
+          const nameChanged = String(current.customer_name || '') !== customerName;
+          const classChanged = String(current.class_name || '') !== String(className || '');
+          const notesChanged = String(current.notes || '') !== String(notes || '');
+          const dateChanged = new Date(current.created_at).getTime() !== new Date(occurredAt).getTime();
+          const changedFields = [nameChanged && 'customer',classChanged && 'kelas',notesChanged && 'catatan',dateChanged && 'tanggal'].filter(Boolean);
+          if (!changedFields.length) return [{id:orderId}];
+
+          let customerId = current.customer_id;
+          if (nameChanged || classChanged || !customerId) {
+            if (customerId) {
+              const related = await db`select count(*)::int as count from orders where customer_id=${customerId}::uuid`;
+              if (Number(related[0]?.count) > 1) {
+                const inserted = await db`insert into customers(name,class_name,phone,notes)
+                  values(${customerName},${className},${current.phone},${current.customer_notes}) returning id`;
+                customerId = inserted[0].id;
+              } else {
+                await db`update customers set name=${customerName},class_name=${className},updated_at=now() where id=${customerId}::uuid`;
+              }
+            } else {
+              const inserted = await db`insert into customers(name,class_name) values(${customerName},${className}) returning id`;
+              customerId = inserted[0].id;
+            }
+          }
+
+          await db`update orders set customer_id=${customerId}::uuid,notes=${notes},created_at=${occurredAt}::timestamptz,
+              fulfilled_at=${occurredAt}::timestamptz,updated_at=now() where id=${orderId}::uuid`;
+          await db`insert into audit_logs(event_type,entity_type,entity_id,payload)
+            values('SALE_DETAILS_EDITED','order',${orderId}::uuid,${db.json({fields:changedFields})})`;
+          return [{id:orderId}];
+        });
         break;
       }
       case "record_purchase": {

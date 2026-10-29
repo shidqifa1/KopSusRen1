@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const serviceSource = fs.readFileSync(new URL('../src/services/kopsusren.js', import.meta.url), 'utf8');
+const commands = fs.readFileSync(new URL('../api/v2/commands.ts',import.meta.url),'utf8');
 function source(name) {
   const start = html.search(new RegExp(`(?:async )?function ${name}\\(`));
   assert.ok(start >= 0, `${name} exists`);
@@ -34,6 +36,32 @@ test('sale details use the sale cost including no-ice adjustments', () => {
     getMenu:()=>({}), hitungModalMenu:()=>9999, rp:String, safeText:String, formatDate:String, openModal:()=>{} }, 'a');
   assert.match(content,/>1234</);
   assert.match(content,/>6766</);
+});
+test('sales history exposes date correction and a no-stock historical sale form', () => {
+  const history = html.slice(html.indexOf('id="page-riwayat"'),html.indexOf('<!-- ============== KALKULATOR'));
+  assert.match(history,/id="historicalSaleForm"/);
+  assert.match(history,/id="historicalSaleDate"/);
+  assert.match(history,/id="historicalSaleQuantity"/);
+  assert.match(history,/tidak mengurangi stok dan tidak mengubah saldo/);
+  assert.match(html,/id="editSaleDetailsButton"/);
+  assert.match(html,/id="editSaleDate"/);
+  assert.match(serviceSource,/updateSaleDetails: payload => command\('edit_sale_details'/);
+  assert.match(commands,/"edit_sale_details"/);
+});
+test('adding a backdated sale sends each cup as a retry-safe historical import',async()=>{
+  const {context,node}=appHarness();const submitted=[];
+  node('historicalSaleDate').value='2026-10-20';node('historicalSaleTime').value='13:45';
+  node('historicalSaleCustomer').value='Rani';node('historicalSaleClass').value='7A';
+  node('historicalSaleProduct').value='americano';node('historicalSaleQuantity').value='2';node('historicalSalePrice').value='8000';
+  node('historicalSalePayment').value='QRIS';node('historicalSaleNotes').value='tertinggal';node('historicalSaleForm').reset=()=>{};
+  context.crypto={randomUUID:()=> 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'};
+  context.today=()=> '2026-10-29';context.showToast=()=>{};context.runV2Mutation=async(_message,work)=>{await work();return true;};
+  context.window.kopsusrenServices={importSales:async payload=>submitted.push(payload)};
+  await context.submitHistoricalSale({preventDefault(){}});
+  assert.equal(submitted.length,1);
+  assert.equal(submitted[0].rows.length,2);
+  assert.ok(submitted[0].rows.every(row=>row.date==='2026-10-20T13:45:00+07:00'&&row.paymentMethod==='QRIS'));
+  assert.match(submitted[0].batchKey,/^[a-f0-9]{32}$/);
 });
 test('fulfilled sales keep their saved HPP after ingredient prices change', () => {
   const base = {
@@ -206,7 +234,6 @@ test('transaction tabs support arrow keys, Home and End', () => {
 });
 
 const ts = (await import('typescript')).default;
-const commands = fs.readFileSync(new URL('../api/v2/commands.ts',import.meta.url),'utf8');
 async function importCase(action, rows) {
   const start=commands.indexOf(`case "${action}": {`);
   const end=commands.indexOf('\n      case ',start+1);
@@ -236,6 +263,35 @@ test('sales import sends one parameterized batch and retains every row idempoten
   const batch=statements[0].values.find(value=>value?.json)?.json;
   assert.deepEqual(batch.map(row=>row.key),[0,1,2].map(i=>`csv-sale:${'a'.repeat(64)}:${i}`));
   assert.doesNotMatch(statements[0].query,/CUSTOMER-/);
+});
+async function editSaleCommand(payload,{relatedCount=1,status='FULFILLED'}={}) {
+  const start=commands.indexOf('case "edit_sale_details": {');assert.ok(start>=0,'edit_sale_details exists');
+  const end=commands.indexOf('\n      case ',start+1);const statements=[];
+  const db=async(parts,...values)=>{
+    const query=parts.join('?');
+    if(query.includes('from orders o left join customers'))return status==='MISSING'?[]:[{id:'order-id',status,customer_id:'customer-id',notes:'old note',created_at:'2026-10-20T01:00:00.000Z',customer_name:'Old Name',class_name:'A',phone:null,customer_notes:null}];
+    if(query.includes('count(*)::int as count'))return [{count:relatedCount}];
+    if(query.includes('insert into customers')){statements.push({query,values});return [{id:'new-customer-id'}];}
+    statements.push({query,values});return [];
+  };
+  db.begin=async callback=>callback(db);db.json=value=>({json:JSON.parse(JSON.stringify(value))});
+  const body=commands.slice(start+'case "edit_sale_details": {'.length,end).trim().slice(0,-1);
+  const context=vm.createContext({payload,sql:{begin:db.begin,json:db.json},uuidPattern:/^[a-z-]+$/,importDate:value=>new Date(value).toISOString(),Date,Number,String,JSON});
+  context.sql.begin=async callback=>callback(db);context.sql.json=db.json;
+  const script=ts.transpile(`(async()=>{let rows;switch('edit_sale_details'){case "edit_sale_details":{${body}}}return rows;})()`,{target:ts.ScriptTarget.ES2022});
+  const rows=await vm.runInContext(script,context);
+  return {rows,statements};
+}
+test('historical sale edit changes only order details and records an audit event',async()=>{
+  const {rows,statements}=await editSaleCommand({orderId:'order-id',date:'2026-10-22',time:'09:30',customerName:'Correct Name',className:'B',notes:'Correct note'},{relatedCount:3});
+  assert.equal(rows[0].id,'order-id');
+  assert.ok(statements.some(item=>item.query.includes('update orders set customer_id')));
+  assert.ok(statements.some(item=>item.query.includes('insert into audit_logs')));
+  assert.ok(statements.some(item=>item.query.includes('insert into customers')));
+  assert.doesNotMatch(statements.map(item=>item.query).join(' '),/ledger_entries|inventory_movements|order_items|payments/);
+});
+test('historical sale edit refuses incomplete orders before writing',async()=>{
+  await assert.rejects(()=>editSaleCommand({orderId:'order-id',date:'2026-10-22',time:'09:30',customerName:'Correct Name',className:'B',notes:''},{status:'ACCEPTED'}),/Hanya penjualan/);
 });
 test('cash import sends one batch and retains signed amounts and references',async()=>{
   const {statements,response}=await importCase('import_cash',[{amount:5000,date:'2026-10-17'},{amount:-1000,date:'2026-10-17'}]);

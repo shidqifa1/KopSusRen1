@@ -40,6 +40,7 @@
     confirmPayment: orderId => command('confirm_cash_payment', { orderId }),
     completeOrder: orderId => command('complete_order', { orderId }),
     voidOrder: (orderId, reason) => command('void_order', { orderId, reason }),
+    updateSaleDetails: payload => command('edit_sale_details', payload),
     createPo: payload => command('create_po', payload),
     openPoNow: (poSessionId, cutoffAt, maxTotalCups, ingredientLimits) => command('open_po_now', { poSessionId, cutoffAt, maxTotalCups, ingredientLimits }),
     setPoStatus: (poSessionId, status) => command('set_po_status', { poSessionId, status }),
